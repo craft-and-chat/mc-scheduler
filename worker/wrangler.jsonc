@@ -7,7 +7,7 @@
     {
       "binding": "DB",
       "database_name": "mc-scheduler",
-      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+      "database_id": "717d1103-47d5-40f1-8025-0917a634df73"
     }
   ],
   "triggers": { "crons": ["*/15 * * * *"] },
