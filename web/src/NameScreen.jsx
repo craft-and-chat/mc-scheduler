@@ -11,7 +11,7 @@ export function NameScreen({ onChoose }) {
   const load = () => {
     setErr('');
     api.state().then((s) => { setPeople(s.people); if (s.config?.appName) setAppName(s.config.appName); })
-      .catch(() => setErr("Couldn't reach the server."));
+      .catch((e) => setErr(e.network ? "Couldn't reach the server." : e.message));
   };
   useEffect(load, []);
 
