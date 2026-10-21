@@ -29,7 +29,6 @@ export function WeekScreen({ me, now, onSwitch }) {
   const [cant, setCantState] = useState(false);
   const [status, setStatus] = useState('waiting');
   const [pill, setPill] = useState('');
-  const [gridOpen, setGridOpen] = useState(null);
   const [promptOk, setPromptOk] = useState(false);
   const [dismissed, setDismissed] = useState(() => store.get('mcs_prompt_off') === '1');
   const [copied, setCopied] = useState(false);
@@ -87,7 +86,7 @@ export function WeekScreen({ me, now, onSwitch }) {
   }, [load]);
 
   const goWeek = async (w) => {
-    setBusy(true); await flush(); setSel(w); setPromptOk(false); setGridOpen(null);
+    setBusy(true); await flush(); setSel(w); setPromptOk(false);
     await load(w, true); setBusy(false);
   };
 
@@ -142,9 +141,6 @@ export function WeekScreen({ me, now, onSwitch }) {
 
   const ranked = rankSlots(people, week, cfg, { notBefore: now });
   const best3 = quickPicks(ranked, cfg, 3);
-  const rankedOthers = rankSlots(people, week, cfg, { excludeId: me.id, notBefore: now });
-  const picks = others.filter((p) => p.blocks.length).length >= 2 ? quickPicks(rankedOthers, cfg, 5) : [];
-  const showGrid = gridOpen === null ? picks.length === 0 : gridOpen;
 
   const weeks = [];
   for (let w = st.currentWeek; w <= addDays(st.openWeek, 21); w = addDays(w, 7)) weeks.push(w);
@@ -218,36 +214,10 @@ export function WeekScreen({ me, now, onSwitch }) {
       </section>
 
       <div class={cant ? 'dim' : ''}>
-        {picks.length > 0 && (
-          <section class="card" data-testid="quick-picks">
-            <h3>Popular times</h3>
-            <p class="muted small">Tap the ones that work for you.</p>
-            <div class="picks">
-              {picks.map((s) => {
-                const on = s.blocks.every((b) => mine.has(b));
-                return (
-                  <button key={s.day + '-' + s.hour} class={'pick' + (on ? ' on' : '')} aria-pressed={on} data-testid="pick"
-                    onClick={() => onApply(s.blocks, !on)}>
-                    <span class="tick">{on ? '✓' : ''}</span>
-                    <span class="pk"><b>{formatSlot(week, s, cfg)}</b>
-                      <span class="small">{s.available.length} can play: {namesLine(s.available)}</span></span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
-        {picks.length > 0 && (
-          <button class="btn wide" data-testid="toggle-grid" onClick={() => setGridOpen(!showGrid)}>
-            {showGrid ? 'Hide full grid ▴' : 'Pick other times ▾'}</button>
-        )}
-        {showGrid && (
-          <section class="gridwrap">
-            <Grid cfg={cfg} week={week} now={now} mine={mine} counts={counts} maxCount={maxCount} onApply={onApply} />
-            <p class="muted small center">Tap hours you're free · hold &amp; drag to select many</p>
-          </section>
-        )}
+        <section class="gridwrap">
+          <Grid cfg={cfg} week={week} now={now} mine={mine} counts={counts} maxCount={maxCount} onApply={onApply} />
+          <p class="muted small center">Tap hours you're free · hold &amp; drag to select many</p>
+        </section>
       </div>
 
       {promptOk && !dismissed && rules.length === 0 && mine.size > 0 && pill !== 'saving' && (

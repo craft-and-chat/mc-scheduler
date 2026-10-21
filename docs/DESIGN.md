@@ -141,7 +141,7 @@ at 360 px. Function over form, but it should look tidy.
 1. **Regular times** set → nothing to do each week. The page says so: "↻ You're in via your regular
    times. Different this week? Tweak below."
 2. **One tap**: "Same as last week" (if a previous response exists and none for this week) or "Can't play this week".
-3. **Quick picks** (2–5 taps): once ≥ 2 other people have availability for the week, show up to 5
+3. ~~Quick picks~~ — REMOVED at the user's request (grid only). Original idea: (2–5 taps): once ≥ 2 other people have availability for the week, show up to 5
    popular non-overlapping slots (`rankSlots(..., {excludeId: me, notBefore: now})` → `quickPicks`) as big cards:
    `Sat 31 Oct · 19:00–21:00` / "5 can play: Alex, Sam, Jo +2". Tap = toggle "works for me" (adds/removes
    both blocks). This is the "the more people answer, the fewer things you click" mechanic: later

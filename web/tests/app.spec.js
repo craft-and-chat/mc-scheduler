@@ -36,23 +36,17 @@ test('name picker: choose existing and create new', async ({ page }) => {
   await expect(page.getByTestId('demo-note')).toBeVisible();
 });
 
-test('week view: quick picks toggle and autosave persists', async ({ page }) => {
+test('week view: grid shown directly, no popular-times cards, autosave persists', async ({ page }) => {
   await join(page);
-  await expect(page.getByTestId('quick-picks')).toBeVisible();
+  await expect(page.getByTestId('grid')).toBeVisible();
+  await expect(page.getByTestId('quick-picks')).toHaveCount(0);
+  await expect(page.getByTestId('toggle-grid')).toHaveCount(0);
   await shot(page, '02-week-top');
-  const pick = page.getByTestId('pick').first();
-  await pick.click();
-  await expect(pick).toHaveAttribute('aria-pressed', 'true');
+  await cell(page, 5, 19).tap();
   await expect(page.getByTestId('status')).toContainText("You've answered");
-  await saved(page);
-  await shot(page, '03-after-quick-pick');
-  await pick.click();
-  await expect(pick).toHaveAttribute('aria-pressed', 'false');
-  await pick.click();
   await saved(page);
   await page.reload();
-  await expect(page.getByTestId('pick').first()).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByTestId('status')).toContainText("You've answered");
+  await expect(cell(page, 5, 19)).toHaveClass(/on/);
   await noOverflow(page);
 });
 

@@ -3,8 +3,8 @@
 Every week your friends tap when they're free; the app picks the best 2-hour Minecraft session and
 Discord announces it. No accounts — you just pick your name.
 
-- **10-second answers:** popular times appear as one-tap "quick picks" once a couple of people have
-  answered, "Same as last week" and "Can't play this week" are single taps, and **regular times**
+- **10-second answers:** one grid of hours (tap, or hold & drag; tinted by how many friends are free),
+  "Same as last week" and "Can't play this week" are single taps, and **regular times**
   ("free every Sunday 17–21, forever / until a date") count you in automatically every week.
 - **Automatic weekly cycle** (UK time, configurable): Fri 12:00 Discord "fill in your times" →
   Sat 18:00 reminder naming who hasn't answered → **Sun 18:00 the best slot is locked in and announced**
