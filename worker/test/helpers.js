@@ -12,7 +12,7 @@ export async function startWorker({ port, vars = {} }) {
   rmSync(persist, { recursive: true, force: true });
   execFileSync(wrangler, ['d1', 'execute', 'mc-scheduler', '--local', '--persist-to', persist, '--file=schema.sql'], { cwd: root, stdio: 'pipe' });
   const args = ['dev', '--local', '--port', String(port), '--persist-to', persist, '--inspector-port', String(port + 1000)];
-  for (const [k, v] of Object.entries({ ADMIN_KEY: 'testkey', DEV_FAKE_NOW_ALLOWED: '1', ...vars })) args.push('--var', `${k}:${v}`);
+  for (const [k, v] of Object.entries({ ADMIN_KEY: 'testkey', DEV_FAKE_NOW_ALLOWED: '1', DAY_START_HOUR: '12', ...vars })) args.push('--var', `${k}:${v}`);
   const proc = spawn(wrangler, args, { cwd: root, stdio: 'pipe', env: { ...process.env, WRANGLER_SEND_METRICS: 'false' } });
   let log = '';
   proc.stdout.on('data', (d) => (log += d));

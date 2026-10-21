@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as S from '../../shared/schedule.js';
+const { parseConfig, effectiveBlocks, isValidBlock } = S;
 
-const cfg = S.parseConfig({});
+const cfg = S.parseConfig({ DAY_START_HOUR: '12' }); // pre-existing tests were written for a 12:00 start
 const cfgLon = cfg;
 
 test('parseConfig defaults and overrides', () => {
@@ -68,7 +69,7 @@ test('effectiveBlocks', () => {
   assert.deepEqual(S.effectiveBlocks({ cant: true, blocks: [] }, rules, '2026-10-26', cfg), { status: 'cant', blocks: [] });
   const r = S.effectiveBlocks({ cant: false, blocks: [S.blockId(1, 20), 3] }, rules, '2026-10-26', cfg);
   assert.equal(r.status, 'responded'); assert.deepEqual(r.blocks, [S.blockId(1, 20)]);
-  assert.equal(S.effectiveBlocks({ cant: false, blocks: [] }, rules, '2026-10-26', cfg).status, 'responded');
+  assert.equal(S.effectiveBlocks({ cant: false, blocks: [] }, rules, '2026-10-26', cfg).status, 'regular'); // empty answer = not answered → regular times apply
 });
 
 const sat = (h) => S.blockId(5, h);
@@ -113,4 +114,15 @@ test('formatting', () => {
   assert.equal(S.formatHour(24), '00:00');
   const u = S.googleCalendarUrl({ start: new Date('2026-10-31T19:00:00Z'), end: new Date('2026-10-31T21:00:00Z'), title: 'MC' });
   assert.ok(u.includes('20261031T190000Z%2F20261031T210000Z'));
+});
+
+test('empty response (not cant) counts as not answered and falls back to regular times', () => {
+  const cfg = parseConfig({});
+  const w = '2026-10-26';
+  assert.equal(effectiveBlocks({ blocks: [], cant: false }, [], w, cfg).status, 'waiting');
+  const r = effectiveBlocks({ blocks: [], cant: false }, [{ weekday: 6, startHour: 17, endHour: 19, until: null }], w, cfg);
+  assert.equal(r.status, 'regular');
+  assert.equal(r.blocks.length, 2);
+  assert.equal(effectiveBlocks({ blocks: [], cant: true }, [], w, cfg).status, 'cant');
+  assert.ok(isValidBlock(5 * 32 + 9, cfg), 'mornings are bookable');
 });

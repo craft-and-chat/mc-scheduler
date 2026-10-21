@@ -11,7 +11,7 @@ export function Grid(props) {
   P.current = props;
 
   const hours = [];
-  for (let h = cfg.dayStartHour; h < cfg.dayEndHour; h++) hours.push(h);
+  for (let h = props.fromHour ?? cfg.dayStartHour; h < cfg.dayEndHour; h++) hours.push(h);
 
   const isPast = (b) => blockStart(week, b, cfg) < P.current.now;
   const blockAt = (el) => {

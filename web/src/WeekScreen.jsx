@@ -28,6 +28,7 @@ export function WeekScreen({ me, now, onSwitch }) {
   const [mine, setMineState] = useState(new Set());
   const [cant, setCantState] = useState(false);
   const [status, setStatus] = useState('waiting');
+  const [morning, setMorning] = useState(false);
   const [pill, setPill] = useState('');
   const [promptOk, setPromptOk] = useState(false);
   const [dismissed, setDismissed] = useState(() => store.get('mcs_prompt_off') === '1');
@@ -91,7 +92,7 @@ export function WeekScreen({ me, now, onSwitch }) {
   };
 
   const edit = (nextMine) => {
-    setMine(nextMine); setCant(false); setStatus('responded'); schedule();
+    setMine(nextMine); setCant(false); setStatus(nextMine.size ? 'responded' : 'waiting'); schedule();
   };
   const onApply = (blocks, value) => {
     const s = new Set(mineRef.current);
@@ -139,6 +140,12 @@ export function WeekScreen({ me, now, onSwitch }) {
   for (const p of others) for (const b of p.blocks) counts.set(b, (counts.get(b) || 0) + 1);
   const maxCount = Math.max(0, ...counts.values());
 
+  const viewStart = Math.max(cfg.dayStartHour, cfg.viewStartHour ?? cfg.dayStartHour);
+  const hasEarly = viewStart > cfg.dayStartHour;
+  const isEarly = (b) => b % 32 < viewStart;
+  const myEarly = [...mine].some(isEarly);
+  const othersEarly = others.filter((p) => p.blocks.some(isEarly)).length;
+  const showMorning = morning || myEarly;
   const ranked = rankSlots(people, week, cfg, { notBefore: now });
   const best3 = quickPicks(ranked, cfg, 3);
 
@@ -215,7 +222,12 @@ export function WeekScreen({ me, now, onSwitch }) {
 
       <div class={cant ? 'dim' : ''}>
         <section class="gridwrap">
-          <Grid cfg={cfg} week={week} now={now} mine={mine} counts={counts} maxCount={maxCount} onApply={onApply} />
+          {hasEarly && !myEarly && (
+            <button class="btn wide" data-testid="toggle-morning" onClick={() => setMorning(!morning)}>
+              {showMorning ? 'Hide morning times ▴' : `Show morning times ▾${othersEarly ? ` (${othersEarly} free)` : ''}`}</button>
+          )}
+          <Grid cfg={cfg} week={week} now={now} mine={mine} counts={counts} maxCount={maxCount} onApply={onApply}
+            fromHour={showMorning ? cfg.dayStartHour : viewStart} />
           <p class="muted small center">Tap hours you're free · hold &amp; drag to select many</p>
         </section>
       </div>

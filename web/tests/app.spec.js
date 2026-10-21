@@ -222,3 +222,30 @@ test('access code is captured and stripped', async ({ page }) => {
   await expect(page).not.toHaveURL(/code=/);
   expect(await page.evaluate(() => localStorage.getItem('mcs_code'))).toBe('abc123');
 });
+
+test('clearing every hour goes back to "not answered"', async ({ page }) => {
+  await join(page, 'Clear Tester');
+  await cell(page, 4, 20).tap();
+  await expect(page.getByTestId('status')).toContainText("You've answered");
+  await saved(page);
+  await cell(page, 4, 20).tap();
+  await expect(page.getByTestId('status')).toContainText('Not answered');
+  await saved(page);
+  await page.reload();
+  await expect(page.getByTestId('status')).toContainText('Not answered');
+});
+
+test('morning times are hidden until shown, and stay shown once used', async ({ page }) => {
+  await join(page, 'Early Bird');
+  await expect(cell(page, 5, 9)).toHaveCount(0);
+  await expect(cell(page, 5, 12)).toBeVisible();
+  await page.getByTestId('toggle-morning').click();
+  await expect(cell(page, 5, 0)).toBeVisible();
+  await cell(page, 5, 9).tap();
+  await expect(cell(page, 5, 9)).toHaveClass(/on/);
+  await saved(page);
+  await page.reload();
+  await expect(cell(page, 5, 9)).toHaveClass(/on/);
+  await noOverflow(page);
+  await shot(page, '13-morning');
+});

@@ -13,7 +13,8 @@ export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', '
 
 export const DEFAULT_CONFIG = {
   timezone: 'Europe/London',
-  dayStartHour: 12, // first bookable hour (inclusive)
+  dayStartHour: 0, // first bookable hour (inclusive)
+  viewStartHour: 12, // grid shows from here by default; earlier hours behind "Show morning times"
   dayEndHour: 24, // last bookable hour (exclusive); up to 30 allowed (06:00 next morning)
   sessionHours: 2,
   minPlayers: 2,
@@ -34,6 +35,7 @@ export function parseConfig(env = {}) {
   return {
     timezone: env.TIMEZONE || d.timezone,
     dayStartHour: num('DAY_START_HOUR', d.dayStartHour),
+    viewStartHour: num('VIEW_START_HOUR', d.viewStartHour),
     dayEndHour: num('DAY_END_HOUR', d.dayEndHour),
     sessionHours: num('SESSION_HOURS', d.sessionHours),
     minPlayers: num('MIN_PLAYERS', d.minPlayers),
@@ -181,12 +183,14 @@ export function rulesToBlocks(rules, weekId, cfg) {
 }
 
 // What counts for a person in a week.
-// response: { blocks: int[], cant: bool } | null   (a saved response always overrides regular times)
+// response: { blocks: int[], cant: bool } | null   (a saved response overrides regular times;
+//           a response with no blocks and no "can't" counts as not answered)
 // Returns { status: 'responded' | 'cant' | 'regular' | 'waiting', blocks: int[] }
 export function effectiveBlocks(response, rules, weekId, cfg) {
   if (response) {
     if (response.cant) return { status: 'cant', blocks: [] };
-    return { status: 'responded', blocks: (response.blocks || []).filter((b) => isValidBlock(b, cfg)) };
+    const blocks = (response.blocks || []).filter((b) => isValidBlock(b, cfg));
+    if (blocks.length) return { status: 'responded', blocks };
   }
   const blocks = rulesToBlocks(rules, weekId, cfg);
   return { status: blocks.length ? 'regular' : 'waiting', blocks };

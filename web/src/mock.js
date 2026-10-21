@@ -148,7 +148,7 @@ export async function mockRequest(method, path, query, body, headers) {
     const i = d.responses.findIndex((r) => r.personId === personId && r.week === week);
     if (i >= 0) d.responses[i] = rec; else d.responses.push(rec);
     persist();
-    return { ok: true, status: cant ? 'cant' : 'responded', blocks };
+    return { ok: true, status: cant ? 'cant' : (blocks.length ? 'responded' : 'waiting'), blocks };
   }
 
   if (method === 'DELETE' && path === '/api/availability') {
