@@ -14,7 +14,6 @@ const STATUS_TEXT = {
   waiting: ['⏳', 'Not answered yet'],
 };
 
-const BRUSHES = [['free', '✓ Free'], ['maybe', '? Maybe'], ['no', '✗ No']];
 
 
 // "Show list" toggle: everyone, grouped by whether they can make this slot. No "+N" truncation.
@@ -22,9 +21,9 @@ function SlotList({ slot, people, testid }) {
   const [open, setOpen] = useState(false);
   const ids = (l) => new Set(l.map((x) => x.id));
   const can = ids(slot.available), maybe = ids(slot.maybe || []), part = ids(slot.partial || []);
-  const groups = [['✅ Can make it', []], ['❔ Maybe', []], ['◐ Only part of it', []], ['❌ Can’t make it', []], ['⏳ Not answered yet', []]];
+  const groups = [['✅ Can make it', []], ['◐ Only part of it', []], ['❌ Can’t make it', []], ['⏳ Not answered yet', []]];
   for (const p of people) {
-    const g = can.has(p.id) ? 0 : maybe.has(p.id) ? 1 : part.has(p.id) ? 2 : p.status === 'waiting' ? 4 : 3;
+    const g = can.has(p.id) || maybe.has(p.id) ? 0 : part.has(p.id) ? 1 : p.status === 'waiting' ? 3 : 2;
     groups[g][1].push(p.name);
   }
   return (
@@ -47,7 +46,7 @@ export function WeekScreen({ me, now, onSwitch }) {
   const [mine, setMineState] = useState(new Set());
   const [maybe, setMaybeState] = useState(new Set());
   const [no, setNoState] = useState(new Set());
-  const [brush, setBrush] = useState('free');
+  const brush = 'free'; // the grid only marks free hours; "definitely not" comes from the full-house card
   const [cant, setCantState] = useState(false);
   const [status, setStatus] = useState('waiting');
   const [morning, setMorning] = useState(false);
@@ -140,7 +139,7 @@ export function WeekScreen({ me, now, onSwitch }) {
   };
   const sameAsLast = (prev) => {
     const fut = (a) => new Set((a || []).filter((b) => blockStart(weekRef.current, b, cfg) >= nowRef.current));
-    edit(fut(prev.blocks), fut(prev.maybe), fut(prev.no));
+    edit(fut(prev.blocks), new Set(), new Set());
   };
   const reloadAll = async () => { await flush(); await load(weekRef.current, true); };
   const makeRegular = async () => {
@@ -239,7 +238,7 @@ export function WeekScreen({ me, now, onSwitch }) {
             ? <span>🔒 <b>Locked in: {st.session.label}</b> ({st.session.attendees.length} playing)</span>
             : <span>🔒 No session this week — not enough players.</span>)
           : lead && lead.available.length
-            ? <span>🏆 <b>Leading so far: {formatSlot(week, lead, cfg)}</b> ({lead.available.length} of {answered.length} who answered{lead.maybe.length ? `, +${lead.maybe.length} maybe` : ''})</span>
+            ? <span>🏆 <b>Leading so far: {formatSlot(week, lead, cfg)}</b> ({lead.available.length} of {answered.length} who answered)</span>
             : <span>No times yet — be the first!</span>}
         {(() => {
           const ls = st.locked ? (st.session && st.session.status === 'scheduled' && rankSlots(people, week, cfg).find((r) => r.day === st.session.day && r.hour === st.session.hour)) : (lead && lead.available.length && lead);
@@ -264,15 +263,9 @@ export function WeekScreen({ me, now, onSwitch }) {
             <button class="btn wide" data-testid="toggle-morning" onClick={() => setMorning(!morning)}>
               {showMorning ? 'Hide morning times ▴' : `Show morning times ▾${othersEarly ? ` (${othersEarly} free)` : ''}`}</button>
           )}
-          <div class="brush" role="radiogroup" aria-label="Paint with" data-testid="brush">
-            {BRUSHES.map(([k, t]) => (
-              <button key={k} type="button" role="radio" aria-checked={brush === k} data-testid={'brush-' + k}
-                class={'bt bt-' + k + (brush === k ? ' sel' : '')} onClick={() => setBrush(k)}>{t}</button>
-            ))}
-          </div>
           <Grid cfg={cfg} week={week} now={now} states={states} brush={brush} counts={counts} maxCount={maxCount} onApply={onApply}
             fromHour={showMorning ? cfg.dayStartHour : viewStart} />
-          <p class="muted small center">Pick ✓ ? ✗ above, then tap hours · hold &amp; drag to paint many</p>
+          <p class="muted small center">Tap hours you're free · hold &amp; drag to select many</p>
         </section>
       </div>
 
@@ -285,11 +278,9 @@ export function WeekScreen({ me, now, onSwitch }) {
               {others.length === 0
                 ? `You're the only one missing — everyone else (${n.total - 1} of ${n.total}) can make it. Full house!`
                 : `Only you and ${others.join(' and ')} are missing for a full house (${n.available.length} of ${n.total}).`}
-              {n.meMaybe ? ' You said maybe — can you confirm?' : ''}
             </p>
             <div class="row wrapRow">
               <button class="btn primary" data-testid="nudge-yes" onClick={() => onApply(n.blocks, 'free')}>Yes, I can</button>
-              {!n.meMaybe && <button class="btn" data-testid="nudge-maybe" onClick={() => onApply(n.blocks, 'maybe')}>Maybe</button>}
               <button class="btn danger" data-testid="nudge-no" onClick={() => onApply(n.blocks, 'no')}>Definitely not</button>
             </div>
           </section>
@@ -316,7 +307,7 @@ export function WeekScreen({ me, now, onSwitch }) {
         {best3.length === 0 ? <p class="muted small">Nothing yet.</p> : best3.map((s) => (
           <div key={s.day + '-' + s.hour} class="best">
             <b>{formatSlot(week, s, cfg)}</b>
-            <div class="small">{s.available.length} can play{s.maybe.length ? ` · ${s.maybe.length} maybe` : ''}</div>
+            <div class="small">{s.available.length} can play</div>
             <SlotList slot={s} people={people} testid="best-list" />
           </div>
         ))}

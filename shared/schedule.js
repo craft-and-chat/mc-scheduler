@@ -192,8 +192,8 @@ export function effectiveBlocks(response, rules, weekId, cfg) {
     if (response.cant) return { status: 'cant', blocks: [], maybe: [], no: [] };
     const clean = (a) => [...new Set((a || []).filter((b) => isValidBlock(b, cfg)))].sort((x, y) => x - y);
     const blocks = clean(response.blocks);
-    const maybe = clean(response.maybe).filter((b) => !blocks.includes(b));
-    const no = clean(response.no).filter((b) => !blocks.includes(b) && !maybe.includes(b));
+    const maybe = []; // "maybe" was removed from the app; any old stored maybe hours are ignored
+    const no = clean(response.no).filter((b) => !blocks.includes(b));
     if (blocks.length || maybe.length || no.length) return { status: 'responded', blocks, maybe, no };
   }
   const blocks = rulesToBlocks(rules, weekId, cfg);

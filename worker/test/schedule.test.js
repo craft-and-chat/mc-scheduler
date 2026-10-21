@@ -154,10 +154,10 @@ test('rankSlots: maybe ordering (available > maybe > partial)', () => {
   assert.equal(r2[0].day, 3);
 });
 
-test('effectiveBlocks: maybe/no precedence and only-no counts as answered', () => {
+test('effectiveBlocks: maybe ignored, free beats no, and only-no counts as answered', () => {
   const cfg = S.parseConfig({ DAY_START_HOUR: '12' });
   const e = S.effectiveBlocks({ blocks: [B(1, 19)], maybe: [B(1, 19), B(1, 20)], no: [B(1, 19), B(1, 20), B(1, 21)] }, [], W, cfg);
-  assert.deepEqual([e.blocks, e.maybe, e.no], [[B(1, 19)], [B(1, 20)], [B(1, 21)]]);
+  assert.deepEqual([e.blocks, e.maybe, e.no], [[B(1, 19)], [], [B(1, 20), B(1, 21)]]);
   const o = S.effectiveBlocks({ blocks: [], maybe: [], no: [B(1, 19)] }, [{ weekday: 6, startHour: 17, endHour: 19, until: null }], W, cfg);
   assert.equal(o.status, 'responded'); assert.deepEqual(o.blocks, []);
 });

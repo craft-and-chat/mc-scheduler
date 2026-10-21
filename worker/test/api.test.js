@@ -229,7 +229,7 @@ test('maybe / no round-trip, precedence, only-no counts as answered, cant clears
   assert.deepEqual([r.json.blocks, r.json.maybe, r.json.no], [[T(19)], [T(19), T(20)], [T(20), T(21)]]); // stored as sent (deduped)
   let e = me(await state(), p.id);
   assert.equal(e.status, 'responded');
-  assert.deepEqual([e.blocks, e.maybe, e.no], [[T(19)], [T(20)], [T(21)]]); // effective: free > maybe > no
+  assert.deepEqual([e.blocks, e.maybe, e.no], [[T(19)], [], [T(20), T(21)]]); // effective: maybe removed (ignored), free > no
   const g = (await api('GET', `/api/people/${p.id}`)).json;
   assert.deepEqual(g.responses[0].maybe, [T(19), T(20)]);
   assert.deepEqual(g.responses[0].blocks, [T(19)]);

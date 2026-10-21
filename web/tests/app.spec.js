@@ -254,96 +254,12 @@ test('morning times are hidden until shown, and stay shown once used', async ({ 
 const brush = (page, k) => page.getByTestId('brush-' + k).tap();
 const st = (page, day, hour) => cell(page, day, hour).getAttribute('data-state');
 
-test('brush bar: switch brush, paint maybe/no, tap again clears, persists', async ({ page }) => {
-  await join(page, 'Brusher');
-  const bar = page.getByTestId('brush');
-  await expect(bar).toBeVisible();
-  const box = await page.getByTestId('brush-free').boundingBox();
-  expect(box.height).toBeGreaterThanOrEqual(44);
-  await expect(page.getByTestId('brush-free')).toHaveAttribute('aria-checked', 'true');
-  await noOverflow(page);
-
-  await cell(page, 1, 12).tap();                         // free (default brush)
-  await brush(page, 'maybe');
-  await expect(page.getByTestId('brush-maybe')).toHaveAttribute('aria-checked', 'true');
-  await cell(page, 1, 13).tap();
-  await cell(page, 1, 14).tap();
-  await brush(page, 'no');
-  await cell(page, 1, 15).tap();
-  expect(await st(page, 1, 12)).toBe('free');
-  expect(await st(page, 1, 13)).toBe('maybe');
-  expect(await st(page, 1, 15)).toBe('no');
-  await expect(cell(page, 1, 13)).toHaveText('?');
-  await expect(cell(page, 1, 15)).toHaveText('✗');
-  // painting over a different state replaces it
-  await cell(page, 1, 12).tap();
-  expect(await st(page, 1, 12)).toBe('no');
-  // tapping the brush's own state clears
-  await cell(page, 1, 12).tap();
-  expect(await st(page, 1, 12)).toBe('');
-  await saved(page);
-  // day header: set all with brush, then clear
-  await brush(page, 'maybe');
-  await page.getByTestId('day-3').tap();
-  expect(await st(page, 3, 12)).toBe('maybe'); expect(await st(page, 3, 23)).toBe('maybe');
-  await page.getByTestId('day-3').tap();
-  expect(await st(page, 3, 12)).toBe(''); expect(await st(page, 3, 23)).toBe('');
-  await saved(page);
-  await page.reload();
-  expect(await st(page, 1, 13)).toBe('maybe');
-  expect(await st(page, 1, 14)).toBe('maybe');
-  expect(await st(page, 1, 15)).toBe('no');
-  expect(await st(page, 1, 12)).toBe('');
-  await expect(page.getByTestId('status')).toContainText("You've answered");
-  await noOverflow(page);
-});
-
-test('only marking "no" counts as answered; regular-times prompt ignores maybe/no', async ({ page }) => {
-  await join(page, 'No Only');
-  await brush(page, 'no');
-  await cell(page, 2, 20).tap();
-  await expect(page.getByTestId('status')).toContainText("You've answered");
-  await saved(page);
-  await page.reload();
-  expect(await st(page, 2, 20)).toBe('no');
-  await expect(page.getByTestId('regular-prompt')).toHaveCount(0);
-  await brush(page, 'maybe');
-  await cell(page, 2, 21).tap();
-  await saved(page);
-  await expect(page.getByTestId('regular-prompt')).toHaveCount(0); // no free hours => nothing to make regular
-  await page.getByTestId('cant').tap();
-  await saved(page);
-  await page.reload();
-  expect(await st(page, 2, 20)).toBe('');
-  expect(await st(page, 2, 21)).toBe('');
-});
-
-test('mouse drag paints with the brush; starting on a brush-state cell clears', async ({ browser }) => {
-  const ctx = await browser.newContext({ viewport: { width: 500, height: 900 } });
-  const page = await ctx.newPage();
-  await join(page, 'Mouse Paint');
-  await page.getByTestId('brush-maybe').click();
-  await page.getByTestId('grid').evaluate((el) => el.scrollIntoView());
-  const drag = async (h1, h2) => {
-    const a = await cell(page, 1, h1).boundingBox(), b = await cell(page, 1, h2).boundingBox();
-    await page.mouse.move(a.x + 5, a.y + 5); await page.mouse.down();
-    await page.mouse.move(b.x + 5, b.y + 5, { steps: 6 }); await page.mouse.up();
-  };
-  await drag(15, 18);
-  for (const h of [15, 16, 17, 18]) expect(await st(page, 1, h)).toBe('maybe');
-  await drag(16, 19); // starts on a maybe cell => clears the stroke
-  expect(await st(page, 1, 15)).toBe('maybe');
-  for (const h of [16, 17, 18, 19]) expect(await st(page, 1, h)).toBe('');
-  await ctx.close();
-});
-
-// Demo seed (open week 26 Oct): Alex has Sat 18-23 as "maybe"; everyone else on Sat 19-21 is free.
-// A newcomer who answers anything is the 2nd one missing for Sat 19:00-21:00 => nudge.
 async function newcomerWithNudge(page, name = 'Nudgee') {
   await join(page, name);
   await cell(page, 0, 12).tap(); // Mon 12:00 free: now counts as "answered"
   await expect(page.getByTestId('nudge')).toHaveCount(1);
 }
+
 
 test('full-house nudge: Yes marks free and card disappears', async ({ page }) => {
   await newcomerWithNudge(page);
@@ -376,48 +292,6 @@ test('full-house nudge: Definitely not marks no and hides it', async ({ page }) 
   await page.reload();
   await expect(page.getByTestId('nudge')).toHaveCount(0);
   expect(await st(page, 5, 19)).toBe('no');
-});
-
-test('full-house nudge: Maybe keeps it with a confirm prompt; maybe button hidden', async ({ page }) => {
-  await newcomerWithNudge(page, 'Maybee');
-  await page.getByTestId('nudge-maybe').tap();
-  expect(await st(page, 5, 19)).toBe('maybe');
-  await expect(page.getByTestId('nudge')).toContainText('You said maybe — can you confirm?');
-  await expect(page.getByTestId('nudge-maybe')).toHaveCount(0);
-  await saved(page);
-});
-
-test('nudge for a seeded user (Alex, who said maybe) and only-you-missing wording', async ({ page }) => {
-  await page.goto(URL);
-  await page.getByRole('button', { name: 'Alex' }).click();
-  const card = page.getByTestId('nudge');
-  await expect(card).toHaveCount(1);
-  await expect(card).toContainText('Can you do Sat 31 Oct · 19:00–21:00?');
-  await expect(card).toContainText("You're the only one missing — everyone else (4 of 5) can make it. Full house!");
-  await expect(card).toContainText('You said maybe');
-  await page.getByTestId('nudge-yes').tap();
-  await expect(card).toHaveCount(0);
-});
-
-test('screenshots: brush bar + grid + nudge, light and dark', async ({ browser }) => {
-  for (const scheme of ['light', 'dark']) {
-    const ctx = await browser.newContext({ viewport: { width: 360, height: 800 }, colorScheme: scheme, hasTouch: true, isMobile: true });
-    const page = await ctx.newPage();
-    await join(page, 'Shot ' + scheme);
-    await cell(page, 5, 18).tap();
-    await cell(page, 5, 22).tap();
-    await brush(page, 'maybe');
-    await cell(page, 4, 19).tap(); await cell(page, 4, 20).tap();
-    await brush(page, 'no');
-    await cell(page, 3, 19).tap(); await cell(page, 3, 20).tap(); await cell(page, 1, 15).tap();
-    await saved(page);
-    await expect(page.getByTestId('nudge')).toHaveCount(1);
-    await noOverflow(page);
-    await shot(page, `15-brush-grid-${scheme}`);
-    await page.getByTestId('nudge').scrollIntoViewIfNeeded();
-    await page.screenshot({ path: `screenshots/16-nudge-${scheme}.png` });
-    await ctx.close();
-  }
 });
 
 test('best times and leader use a "Show list" toggle listing everyone, no "+N"', async ({ page }) => {
