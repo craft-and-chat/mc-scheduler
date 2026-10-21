@@ -16,9 +16,27 @@ const STATUS_TEXT = {
 
 const BRUSHES = [['free', '✓ Free'], ['maybe', '? Maybe'], ['no', '✗ No']];
 
-function namesLine(list, max = 3) {
-  const n = list.map((x) => x.name);
-  return n.slice(0, max).join(', ') + (n.length > max ? ` +${n.length - max}` : '');
+
+// "Show list" toggle: everyone, grouped by whether they can make this slot. No "+N" truncation.
+function SlotList({ slot, people, testid }) {
+  const [open, setOpen] = useState(false);
+  const ids = (l) => new Set(l.map((x) => x.id));
+  const can = ids(slot.available), maybe = ids(slot.maybe || []), part = ids(slot.partial || []);
+  const groups = [['✅ Can make it', []], ['❔ Maybe', []], ['◐ Only part of it', []], ['❌ Can’t make it', []], ['⏳ Not answered yet', []]];
+  for (const p of people) {
+    const g = can.has(p.id) ? 0 : maybe.has(p.id) ? 1 : part.has(p.id) ? 2 : p.status === 'waiting' ? 4 : 3;
+    if (g === 4 && !p.active) continue;
+    groups[g][1].push(p.name);
+  }
+  return (
+    <div class="slotlist">
+      <button class="link small" data-testid={testid} aria-expanded={open} onClick={() => setOpen(!open)}>
+        {open ? 'Hide list ▴' : 'Show list ▾'}</button>
+      {open && groups.filter(([, n]) => n.length).map(([t, n]) => (
+        <p key={t} class="who small"><b>{t} ({n.length})</b> <span>{n.join(', ')}</span></p>
+      ))}
+    </div>
+  );
 }
 
 export function WeekScreen({ me, now, onSwitch }) {
@@ -225,6 +243,10 @@ export function WeekScreen({ me, now, onSwitch }) {
           : lead && lead.available.length
             ? <span>🏆 <b>Leading so far: {formatSlot(week, lead, cfg)}</b> ({lead.available.length} of {answered.length} who answered{lead.maybe.length ? `, +${lead.maybe.length} maybe` : ''})</span>
             : <span>No times yet — be the first!</span>}
+        {(() => {
+          const ls = st.locked ? (st.session && st.session.status === 'scheduled' && rankSlots(people, week, cfg).find((r) => r.day === st.session.day && r.hour === st.session.hour)) : (lead && lead.available.length && lead);
+          return ls ? <SlotList slot={ls} people={people} testid="leader-list" /> : null;
+        })()}
       </section>
 
       <section class={'me-row'} data-testid="status">
@@ -298,9 +320,8 @@ export function WeekScreen({ me, now, onSwitch }) {
         {best3.length === 0 ? <p class="muted small">Nothing yet.</p> : best3.map((s) => (
           <div key={s.day + '-' + s.hour} class="best">
             <b>{formatSlot(week, s, cfg)}</b>
-            <div class="small">{s.available.length} can play: {namesLine(s.available, 6)}</div>
-            {s.maybe.length > 0 && <div class="small muted">maybe: {namesLine(s.maybe, 6)}</div>}
-            {s.partial.length > 0 && <div class="small muted">partly: {namesLine(s.partial, 6)}</div>}
+            <div class="small">{s.available.length} can play{s.maybe.length ? ` · ${s.maybe.length} maybe` : ''}</div>
+            <SlotList slot={s} people={people} testid="best-list" />
           </div>
         ))}
       </section>

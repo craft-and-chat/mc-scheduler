@@ -419,3 +419,18 @@ test('screenshots: brush bar + grid + nudge, light and dark', async ({ browser }
     await ctx.close();
   }
 });
+
+test('best times and leader use a "Show list" toggle listing everyone, no "+N"', async ({ page }) => {
+  await join(page, 'List Viewer');
+  const best = page.getByTestId('best-list').first();
+  await expect(page.getByText(/ \+\d+$/)).toHaveCount(0);
+  await best.click();
+  await expect(page.getByText(/Can make it \(\d+\)/).first()).toBeVisible();
+  await expect(page.getByText(/Can’t make it \(\d+\)/).first()).toBeVisible();
+  await page.getByTestId('leader-list').click();
+  await expect(page.getByTestId('leader')).toContainText('Can make it');
+  await noOverflow(page);
+  await shot(page, '17-show-list');
+  await best.click();
+  await expect(best).toHaveText(/Show list/);
+});
