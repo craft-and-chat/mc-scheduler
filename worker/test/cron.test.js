@@ -110,11 +110,11 @@ test('weekly cycle: open -> remind -> lock -> soon, idempotent', async () => {
   await tick('2026-10-30T12:30:00Z');
   assert.equal(mock.webhooks.length, 1, 'no duplicate open');
 
-  // reminder lists waiting active people (Eve) but not inactive Frank, and the leader
+  // reminder lists everyone who hasn't answered (incl. people who only entered their name), and the leader
   await tick('2026-10-31T18:05:00Z');
   assert.equal(mock.webhooks.length, 2);
   const rem = text(last());
-  assert.match(rem, /Eve/); assert.doesNotMatch(rem, /Frank/);
+  assert.match(rem, /Eve/); assert.match(rem, /Frank/);
   assert.match(rem, /Sat 7 Nov · 20:00–22:00/); assert.match(rem, /3 can play/);
   await tick('2026-10-31T18:20:00Z');
   assert.equal(mock.webhooks.length, 2, 'no duplicate reminder');

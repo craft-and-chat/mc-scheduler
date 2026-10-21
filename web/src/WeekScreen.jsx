@@ -25,7 +25,6 @@ function SlotList({ slot, people, testid }) {
   const groups = [['✅ Can make it', []], ['❔ Maybe', []], ['◐ Only part of it', []], ['❌ Can’t make it', []], ['⏳ Not answered yet', []]];
   for (const p of people) {
     const g = can.has(p.id) ? 0 : maybe.has(p.id) ? 1 : part.has(p.id) ? 2 : p.status === 'waiting' ? 4 : 3;
-    if (g === 4 && !p.active) continue;
     groups[g][1].push(p.name);
   }
   return (
@@ -201,8 +200,7 @@ export function WeekScreen({ me, now, onSwitch }) {
   const server = cfg.mcServerAddress;
 
   const grouped = { responded: [], regular: [], cant: [], waiting: [] };
-  const inactive = [];
-  for (const p of people) (p.active || p.id === me.id ? grouped[p.status] : inactive).push(p);
+  for (const p of people) grouped[p.status].push(p);
   const [icon, label] = STATUS_TEXT[status];
 
   return (
@@ -314,8 +312,6 @@ export function WeekScreen({ me, now, onSwitch }) {
           grouped[k].length > 0 && (
             <p key={k} class="who"><b>{t}</b> <span>{grouped[k].map((p) => p.name).join(', ')}</span></p>
           ))}
-        {inactive.length > 0 && <details><summary class="muted small">+{inactive.length} others</summary>
-          <p class="who small">{inactive.map((p) => p.name).join(', ')}</p></details>}
         <h4>Best times</h4>
         {best3.length === 0 ? <p class="muted small">Nothing yet.</p> : best3.map((s) => (
           <div key={s.day + '-' + s.hour} class="best">

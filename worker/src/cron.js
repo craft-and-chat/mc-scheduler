@@ -33,7 +33,7 @@ export async function announce(env, type, week, now = new Date()) {
     const t = lockTime(week, cfg);
     return postDiscord(env, buildRemind({
       env, weekLabel,
-      waiting: people.filter((p) => p.active && p.status === 'waiting').map((p) => p.name),
+      waiting: people.filter((p) => p.status === 'waiting').map((p) => p.name),
       leaderLabel: lead ? formatSlot(week, lead, cfg) : '',
       leaderCount: lead ? lead.available.length : 0,
       lockLabel: t > now ? `<t:${Math.floor(t.getTime() / 1000)}:R>` : '',
