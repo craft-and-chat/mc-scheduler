@@ -1,6 +1,54 @@
 import { useEffect, useState } from 'preact/hooks';
-import { addDays, formatWeek } from '../../shared/schedule.js';
+import { addDays, formatWeek, DAYS, formatDate, formatHour, blockId } from '../../shared/schedule.js';
 import { adminKey, api, MOCK } from './api.js';
+
+// Read-only heatmap; tap a tile to see who is free that hour.
+function AdminGrid({ st, week }) {
+  const [sel, setSel] = useState(null);
+  const cfg = st.config, people = st.people;
+  const counts = new Map();
+  let earliest = cfg.dayEndHour;
+  for (const p of people) for (const b of p.blocks) { counts.set(b, (counts.get(b) || 0) + 1); earliest = Math.min(earliest, b % 32); }
+  const from = Math.max(cfg.dayStartHour, Math.min(cfg.viewStartHour ?? cfg.dayStartHour, earliest));
+  const max = Math.max(1, ...counts.values());
+  const hours = [];
+  for (let h = from; h < cfg.dayEndHour; h++) hours.push(h);
+  const groups = sel == null ? [] : [
+    ['✅ Free', people.filter((p) => p.blocks.includes(sel))],
+    ['✗ Definitely not', people.filter((p) => (p.no || []).includes(sel))],
+    ['❌ Not free', people.filter((p) => p.status !== 'waiting' && !p.blocks.includes(sel) && !(p.no || []).includes(sel))],
+    ['⏳ Not answered yet', people.filter((p) => p.status === 'waiting')],
+  ];
+  return (
+    <section class="card" data-testid="admin-grid">
+      <h3>Who's free when</h3>
+      <p class="small muted">Tap a tile to see who's free then.</p>
+      <div class="agrid">
+        <div />
+        {DAYS.map((d, i) => <div key={d} class="ahead">{d}<br /><b>{formatDate(addDays(week, i)).split(' ')[0]}</b></div>)}
+        {hours.map((h) => [
+          <div key={'h' + h} class="ahour">{String(h % 24).padStart(2, '0')}</div>,
+          ...DAYS.map((_, d) => {
+            const b = blockId(d, h), n = counts.get(b) || 0;
+            return (
+              <button key={b} type="button" data-ab={b} class={'acell' + (sel === b ? ' asel' : '')}
+                style={n ? `background: color-mix(in srgb, var(--accent) ${20 + 70 * n / max}%, transparent)` : ''}
+                onClick={() => setSel(sel === b ? null : b)}>{n || ''}</button>
+            );
+          }),
+        ])}
+      </div>
+      {sel != null && (
+        <div class="adetail" data-testid="admin-tile">
+          <b>{DAYS[Math.floor(sel / 32)]} {formatDate(addDays(week, Math.floor(sel / 32)))} · {formatHour(sel % 32)}–{formatHour(sel % 32 + 1)}</b>
+          {groups.filter(([, l]) => l.length).map(([t, l]) => (
+            <p key={t} class="who small"><b>{t} ({l.length})</b> <span>{l.map((p) => p.name).join(', ')}</span></p>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
 
 export function Admin({ now }) {
   const [key, setKey] = useState(adminKey.get());
@@ -53,6 +101,7 @@ export function Admin({ now }) {
             </div>
             <p class="small muted">Session: {st.session ? (st.session.status === 'scheduled' ? st.session.label : 'none') : 'not decided yet'}</p>
           </section>
+          <AdminGrid st={st} week={week} />
           <section class="card">
             <h3>People</h3>
             {st.people.map((p) => (

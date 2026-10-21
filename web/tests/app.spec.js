@@ -308,3 +308,19 @@ test('best times and leader use a "Show list" toggle listing everyone, no "+N"',
   await best.click();
   await expect(best).toHaveText(/Show list/);
 });
+
+test('admin grid: tap a tile to see who is free', async ({ page }) => {
+  await page.goto(URL);
+  await page.goto(URL + '#admin');
+  await page.locator('#akey').fill('admin');
+  await page.getByRole('button', { name: 'Check' }).click();
+  await expect(page.getByTestId('admin-grid')).toBeVisible();
+  await page.locator('[data-ab="179"]').click(); // Sat 19:00
+  const d = page.getByTestId('admin-tile');
+  await expect(d).toContainText('Sat 31 Oct · 19:00–20:00');
+  await expect(d).toContainText('Free (');
+  await noOverflow(page);
+  await shot(page, '18-admin-grid');
+  await page.locator('[data-ab="179"]').click();
+  await expect(d).toHaveCount(0);
+});

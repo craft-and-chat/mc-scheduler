@@ -139,3 +139,9 @@ summary { cursor: pointer; min-height: 32px; }
 .nudge p { margin: 4px 0 10px; }
 .slotlist { margin-top: 4px; } .slotlist .who { margin: 2px 0; }
 .leader .slotlist p { text-align: left; }
+.agrid { display: grid; grid-template-columns: 28px repeat(7, 1fr); gap: 3px; margin-top: 8px; }
+.ahead { text-align: center; font-size: 12px; line-height: 1.2; }
+.ahour { font-size: 11px; color: var(--muted); display: flex; align-items: center; }
+.acell { height: 32px; min-width: 0; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--text); font-size: 12px; padding: 0; cursor: pointer; }
+.acell.asel { outline: 3px solid var(--text); outline-offset: -1px; }
+.adetail { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
