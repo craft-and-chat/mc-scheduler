@@ -57,7 +57,7 @@ export const api = {
   state: (week) => request('GET', '/api/state' + (week ? `?week=${week}` : '')),
   addPerson: (name) => request('POST', '/api/people', { name }),
   person: (id) => request('GET', `/api/people/${id}`),
-  save: (personId, week, blocks, cant = false) => request('PUT', '/api/availability', { personId, week, blocks, cant }),
+  save: (personId, week, blocks, cant = false, maybe = [], no = []) => request('PUT', '/api/availability', { personId, week, blocks, maybe, no, cant }),
   clear: (personId, week) => request('DELETE', `/api/availability?personId=${personId}&week=${week}`),
   addRule: (rule) => request('POST', '/api/recurring', rule),
   delRule: (id) => request('DELETE', `/api/recurring/${id}`),

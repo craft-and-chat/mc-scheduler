@@ -14,6 +14,13 @@ const MAX_LATE_LOCK = 24 * H;
 const ok = (r) => !!(r && (r.ok || r.skipped));
 
 // Post one of the messages (forced; no idempotency bookkeeping). Returns the postDiscord result.
+// Names of people who said "maybe" for the whole of a scheduled session's slot.
+function maybeNames(session, people, week, cfg) {
+  if (!session || session.status !== 'scheduled' || session.day == null) return [];
+  const slot = rankSlots(people, week, cfg).find((s) => s.day === session.day && s.hour === session.hour);
+  return slot ? slot.maybe.map((p) => p.name) : [];
+}
+
 export async function announce(env, type, week, now = new Date()) {
   const st = await getWeekState(env, week, now);
   const { cfg, people, session } = st;
@@ -39,13 +46,13 @@ export async function announce(env, type, week, now = new Date()) {
       if (top && top.available.length > 0) best = top;
     }
     return postDiscord(env, buildLock({
-      env, weekLabel, session,
+      env, weekLabel, session, maybe: maybeNames(session, people, week, cfg),
       bestLabel: best ? formatSlot(week, best, cfg) : '', bestCount: best ? best.available.length : 0,
     }));
   }
   if (type === 'soon') {
     if (!session || session.status !== 'scheduled') return { skipped: true, reason: 'no scheduled session' };
-    return postDiscord(env, buildSoon({ env, session }));
+    return postDiscord(env, buildSoon({ env, session, maybe: maybeNames(session, people, week, cfg) }));
   }
   throw new Error('unknown announce type: ' + type);
 }

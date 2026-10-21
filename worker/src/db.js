@@ -25,14 +25,14 @@ export async function getRules(env, personId) {
 }
 
 export async function getResponses(env, week) {
-  const { results } = await env.DB.prepare('SELECT person_id, week, blocks, cant, updated_at FROM responses WHERE week = ?').bind(week).all();
+  const { results } = await env.DB.prepare('SELECT person_id, week, blocks, maybe, no, cant, updated_at FROM responses WHERE week = ?').bind(week).all();
   return results.map(parseResp);
 }
 
 export function parseResp(r) {
-  let blocks = [];
-  try { blocks = JSON.parse(r.blocks || '[]'); } catch { /* ignore */ }
-  return { personId: r.person_id, week: r.week, blocks, cant: !!r.cant, updatedAt: toIso(r.updated_at) };
+  const list = (v) => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch { return []; } };
+  const blocks = list(r.blocks), maybe = list(r.maybe), no = list(r.no);
+  return { personId: r.person_id, week: r.week, blocks, maybe, no, cant: !!r.cant, updatedAt: toIso(r.updated_at) };
 }
 
 // SQLite datetime('now') -> ISO
@@ -102,7 +102,7 @@ export async function getWeekState(env, week, now) {
   const out = people.map((p) => {
     const resp = respBy.get(p.id) || null;
     const eff = effectiveBlocks(resp, rulesBy.get(p.id) || [], week, cfg);
-    return { id: p.id, name: p.name, status: eff.status, blocks: eff.blocks, updatedAt: resp ? resp.updatedAt : null, active: active.has(p.id) };
+    return { id: p.id, name: p.name, status: eff.status, blocks: eff.blocks, maybe: eff.maybe, no: eff.no, updatedAt: resp ? resp.updatedAt : null, active: active.has(p.id) };
   });
   return { cfg, people: out, session: formatSession(sessRow, cfg) };
 }

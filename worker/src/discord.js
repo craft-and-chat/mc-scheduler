@@ -105,7 +105,9 @@ export function buildRemind({ env, weekLabel, waiting, leaderLabel, leaderCount,
   return { embeds: [{ title: `⏰ Reminder: ${weekLabel}`, description: lines.join('\n'), color: ORANGE }] };
 }
 
-export function buildLock({ env, weekLabel, session, bestLabel, bestCount }) {
+const maybeText = (maybe) => (maybe && maybe.length ? ` (maybe: ${names(maybe)})` : '');
+
+export function buildLock({ env, weekLabel, session, maybe = [], bestLabel, bestCount }) {
   const link = appLink(env);
   if (!session || session.status !== 'scheduled') {
     const best = bestLabel ? ` Best was ${bestLabel} with ${bestCount} ${bestCount === 1 ? 'person' : 'people'}.` : '';
@@ -114,19 +116,19 @@ export function buildLock({ env, weekLabel, session, bestLabel, bestCount }) {
   const desc = [
     `**${session.label}**`,
     `🕒 ${ts(session.start)} (${ts(session.start, 'R')}) — your local time`,
-    `👥 ${names(session.attendees)} (${session.attendees.length})`,
+    `👥 ${names(session.attendees)} (${session.attendees.length})` + maybeText(maybe),
     `🌐 ${serverText(env)}`,
     `📅 [Add to Google Calendar](${calendarLink(env, session)})` + (link ? ` · [Open app](${link})` : ''),
   ];
   return { ping: true, embeds: [{ title: `🎮 Minecraft session locked in!`, description: desc.join('\n'), color: GREEN }] };
 }
 
-export function buildSoon({ env, session }) {
+export function buildSoon({ env, session, maybe = [] }) {
   return {
     ping: true,
     embeds: [{
       title: '⛏️ Starting in about an hour!',
-      description: [`**${session.label}**`, `🌐 Server: ${serverText(env)}`, `👥 ${names(session.attendees)}`].join('\n'),
+      description: [`**${session.label}**`, `🌐 Server: ${serverText(env)}`, `👥 ${names(session.attendees)}` + maybeText(maybe)].join('\n'),
       color: GREEN,
     }],
   };

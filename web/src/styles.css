@@ -1,6 +1,7 @@
 :root {
   --bg: #12151a; --card: #1b2028; --card2: #232a34; --text: #e8edf3; --muted: #93a0b2; --border: #2e3745;
   --accent: #5dbb63; --accent-ink: #08210b; --danger: #e5645c; --warn: #e0b04a;
+  --maybe: #e8b339; --maybe-ink: #2b1f00;
   --heat: 93, 187, 99;
   --radius: 12px;
   color-scheme: dark;
@@ -9,6 +10,7 @@
   :root {
     --bg: #f2f5f0; --card: #ffffff; --card2: #eef2ec; --text: #1a2118; --muted: #5d6a5c; --border: #d5ddd2;
     --accent: #3f9c46; --accent-ink: #ffffff; --danger: #c43d35; --warn: #9a6b00;
+    --maybe: #f0b429; --maybe-ink: #3b2a00;
     --heat: 63, 156, 70;
     color-scheme: light;
   }
@@ -103,6 +105,8 @@ label.grow .input { margin-top: 2px; }
 .cell i { font-style: normal; font-size: .68rem; opacity: .85; }
 .cell.heat { background: rgba(var(--heat), calc(.14 + var(--heat-a, 0) * .5)); }
 .cell.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.mb { background: var(--maybe); border-color: var(--maybe); color: var(--maybe-ink); font-weight: 700; }
+.cell.no { background: rgba(229, 100, 92, .16); border: 1px dashed var(--danger); color: var(--danger); font-weight: 700; }
 .cell.past { opacity: .3; cursor: default; }
 .cell:focus-visible, .btn:focus-visible, .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
@@ -124,3 +128,12 @@ summary { cursor: pointer; min-height: 32px; }
 }
 .savepill.saved { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .savepill.error { background: var(--danger); color: #fff; border-color: var(--danger); }
+
+.brush { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 4px 0 8px; }
+.bt { font: inherit; font-weight: 600; color: var(--text); min-height: 46px; border-radius: 10px; border: 2px solid var(--border); background: var(--card2); cursor: pointer; padding: 0 4px; white-space: nowrap; }
+.bt.sel.bt-free { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.bt.sel.bt-maybe { background: var(--maybe); border-color: var(--maybe); color: var(--maybe-ink); }
+.bt.sel.bt-no { background: var(--danger); border-color: var(--danger); color: #fff; }
+.bt:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.nudge { border-color: var(--maybe); }
+.nudge p { margin: 4px 0 10px; }

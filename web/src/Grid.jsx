@@ -3,9 +3,13 @@ import { DAYS, addDays, blockId, blockStart } from '../../shared/schedule.js';
 
 const LONG_PRESS_MS = 250;
 
-// props: cfg, week, now, mine:Set, counts:Map<block,n>, maxCount, onApply(blocks:number[], value:boolean), disabled
+// props: cfg, week, now, states:Map<block,'free'|'maybe'|'no'>, brush:'free'|'maybe'|'no',
+//        counts:Map<block,n>, maxCount, onApply(blocks:number[], value:'free'|'maybe'|'no'|null)
+// Painting: value = brush, or null (clear) when the first touched cell already has the brush state.
+const SYMBOL = { free: '✓', maybe: '?', no: '✗' };
+const LABEL = { free: 'free', maybe: 'maybe', no: 'not available' };
 export function Grid(props) {
-  const { cfg, week, now, mine, counts, maxCount } = props;
+  const { cfg, week, now, states, brush, counts, maxCount } = props;
   const ref = useRef(null);
   const P = useRef(props);
   P.current = props;
@@ -22,7 +26,8 @@ export function Grid(props) {
 
   useEffect(() => {
     const el = ref.current;
-    const st = { timer: null, painting: false, value: true, startX: 0, startY: 0, moved: false, startB: null, lastTouch: 0, mouse: false, lastB: null };
+    const valueFor = (b) => (P.current.states.get(b) === P.current.brush ? null : P.current.brush);
+    const st = { timer: null, painting: false, value: null, startX: 0, startY: 0, moved: false, startB: null, lastTouch: 0, mouse: false, lastB: null };
     const apply = (b) => {
       if (b == null || b === st.lastB) return;
       st.lastB = b;
@@ -40,7 +45,7 @@ export function Grid(props) {
       if (st.startB == null) return;
       st.timer = setTimeout(() => {
         st.painting = true;
-        st.value = !P.current.mine.has(st.startB);
+        st.value = valueFor(st.startB);
         try { navigator.vibrate && navigator.vibrate(15); } catch {}
         apply(st.startB);
       }, LONG_PRESS_MS);
@@ -63,7 +68,7 @@ export function Grid(props) {
       if (e.type === 'touchend' && !st.moved && st.startB != null) {
         e.preventDefault(); // suppress emulated mouse events
         const b = st.startB;
-        P.current.onApply([b], !P.current.mine.has(b));
+        P.current.onApply([b], valueFor(b));
       }
       st.startB = null;
     };
@@ -76,7 +81,7 @@ export function Grid(props) {
       if (b == null) return;
       e.preventDefault();
       st.mouse = true; st.lastB = null;
-      st.value = !P.current.mine.has(b);
+      st.value = valueFor(b);
       apply(b);
     };
     const onMouseOver = (e) => { if (st.mouse) apply(blockAt(e.target)); };
@@ -86,7 +91,7 @@ export function Grid(props) {
       const b = blockAt(e.target);
       if (b == null) return;
       e.preventDefault();
-      P.current.onApply([b], !P.current.mine.has(b));
+      P.current.onApply([b], valueFor(b));
     };
     const noMenu = (e) => e.preventDefault();
 
@@ -116,8 +121,8 @@ export function Grid(props) {
   const toggleDay = (d) => {
     const bs = hours.map((h) => blockId(d, h)).filter((b) => !isPast(b));
     if (!bs.length) return;
-    const allOn = bs.every((b) => mine.has(b));
-    props.onApply(bs, !allOn);
+    const allOn = bs.every((b) => states.get(b) === brush);
+    props.onApply(bs, allOn ? null : brush);
   };
 
   return (
@@ -136,16 +141,17 @@ export function Grid(props) {
         <div key={'l' + h} class="glabel">{String(h % 24).padStart(2, '0')}</div>,
         ...DAYS.map((_, d) => {
           const b = blockId(d, h);
-          const on = mine.has(b);
+          const state = states.get(b) || '';
           const past = isPast(b);
           const n = counts.get(b) || 0;
           const heat = maxCount ? n / maxCount : 0;
           return (
             <div key={b} data-b={b} data-past={past ? '1' : '0'} role="gridcell" tabIndex={past ? -1 : 0}
-              aria-pressed={on} aria-disabled={past}
-              class={'cell' + (on ? ' on' : '') + (past ? ' past' : '') + (n && !on ? ' heat' : '')}
-              style={n && !on ? { '--heat-a': heat.toFixed(2) } : undefined}>
-              {on ? '✓' : n > 0 ? <i>{n}</i> : ''}
+              aria-pressed={state === 'free'} aria-disabled={past} data-state={state}
+              aria-label={`${DAYS[d]} ${String(h % 24).padStart(2, '0')}:00${state ? ' ' + LABEL[state] : ''}`}
+              class={'cell' + (state === 'free' ? ' on' : state ? ' ' + (state === 'maybe' ? 'mb' : 'no') : '') + (past ? ' past' : '') + (n && !state ? ' heat' : '')}
+              style={n && !state ? { '--heat-a': heat.toFixed(2) } : undefined}>
+              {state ? SYMBOL[state] : n > 0 ? <i>{n}</i> : ''}
             </div>
           );
         }),

@@ -183,42 +183,51 @@ export function rulesToBlocks(rules, weekId, cfg) {
 }
 
 // What counts for a person in a week.
-// response: { blocks: int[], cant: bool } | null   (a saved response overrides regular times;
-//           a response with no blocks and no "can't" counts as not answered)
-// Returns { status: 'responded' | 'cant' | 'regular' | 'waiting', blocks: int[] }
+// response: { blocks: int[] (free), maybe: int[], no: int[] (definitely not), cant: bool } | null
+//   A saved response overrides regular times. A response with nothing marked and no "can't"
+//   counts as not answered. Precedence if a block is in several lists: free > maybe > no.
+// Returns { status: 'responded' | 'cant' | 'regular' | 'waiting', blocks, maybe, no }
 export function effectiveBlocks(response, rules, weekId, cfg) {
   if (response) {
-    if (response.cant) return { status: 'cant', blocks: [] };
-    const blocks = (response.blocks || []).filter((b) => isValidBlock(b, cfg));
-    if (blocks.length) return { status: 'responded', blocks };
+    if (response.cant) return { status: 'cant', blocks: [], maybe: [], no: [] };
+    const clean = (a) => [...new Set((a || []).filter((b) => isValidBlock(b, cfg)))].sort((x, y) => x - y);
+    const blocks = clean(response.blocks);
+    const maybe = clean(response.maybe).filter((b) => !blocks.includes(b));
+    const no = clean(response.no).filter((b) => !blocks.includes(b) && !maybe.includes(b));
+    if (blocks.length || maybe.length || no.length) return { status: 'responded', blocks, maybe, no };
   }
   const blocks = rulesToBlocks(rules, weekId, cfg);
-  return { status: blocks.length ? 'regular' : 'waiting', blocks };
+  return { status: blocks.length ? 'regular' : 'waiting', blocks, maybe: [], no: [] };
 }
 
 // Rank every candidate slot of a week.
-// people: [{ id, name, blocks: int[] }]
+// people: [{ id, name, blocks: int[], maybe?: int[] }]
 // opts.notBefore: Date — slots starting before this are skipped (e.g. in the past)
 // opts.excludeId: person id to leave out (e.g. "everyone except me" for quick picks)
-// Returns [{ day, hour, blocks, start: Date, end: Date, available: [{id,name}], partial: [{id,name}] }] best first.
+// Returns [{ day, hour, blocks, start, end, available: [{id,name}], maybe: [{id,name}], partial: [{id,name}] }] best first.
+//   available = free for every hour; maybe = every hour is free-or-maybe (but not all free);
+//   partial = free/maybe for some hours only.
 export function rankSlots(people, weekId, cfg, opts = {}) {
   const sets = people
     .filter((p) => p.id !== opts.excludeId)
-    .map((p) => ({ id: p.id, name: p.name, set: new Set(p.blocks || []) }));
+    .map((p) => ({ id: p.id, name: p.name, set: new Set(p.blocks || []), soft: new Set([...(p.blocks || []), ...(p.maybe || [])]) }));
   const out = [];
   for (const slot of candidateSlots(cfg)) {
     const start = blockStart(weekId, slot.blocks[0], cfg);
     if (opts.notBefore && start < opts.notBefore) continue;
-    const available = [], partial = [];
+    const available = [], maybe = [], partial = [];
     for (const p of sets) {
       const n = slot.blocks.filter((b) => p.set.has(b)).length;
+      const m = slot.blocks.filter((b) => p.soft.has(b)).length;
       if (n === slot.blocks.length) available.push({ id: p.id, name: p.name });
-      else if (n > 0) partial.push({ id: p.id, name: p.name });
+      else if (m === slot.blocks.length) maybe.push({ id: p.id, name: p.name });
+      else if (m > 0) partial.push({ id: p.id, name: p.name });
     }
-    out.push({ ...slot, start, end: new Date(start.getTime() + cfg.sessionHours * 3600e3), available, partial });
+    out.push({ ...slot, start, end: new Date(start.getTime() + cfg.sessionHours * 3600e3), available, maybe, partial });
   }
   out.sort((a, b) =>
     b.available.length - a.available.length ||
+    b.maybe.length - a.maybe.length ||
     b.partial.length - a.partial.length ||
     a.day - b.day || a.hour - b.hour);
   return out;
@@ -240,6 +249,37 @@ export function quickPicks(ranked, cfg, n = 5) {
     if (picked.length >= n) break;
   }
   return picked;
+}
+
+// "Full house" solver: slots where everyone who answered could play if just `meId` (and at most
+// maxMissing-1 others) said yes. Only offered when no full house is possible already.
+// people: [{ id, name, status, blocks, maybe, no }] (effective, as from /api/state)
+// Returns [{ ...slot, total, missing: [{id,name}], othersMissing: [{id,name}], meMaybe: bool }]
+export function fullHouseNudges(meId, people, weekId, cfg, opts = {}) {
+  const { notBefore, maxMissing = 2, limit = 2 } = opts;
+  const pool = people.filter((p) => (p.status === 'responded' || p.status === 'regular') &&
+    ((p.blocks && p.blocks.length) || (p.maybe && p.maybe.length)));
+  const total = pool.length;
+  const me = pool.find((p) => p.id === meId);
+  if (!me || total < Math.max(2, cfg.minPlayers)) return [];
+  const ranked = rankSlots(pool, weekId, cfg, { notBefore });
+  if (ranked.some((s) => s.available.length === total)) return [];
+  const noOf = new Map(pool.map((p) => [p.id, new Set(p.no || [])]));
+  const myMaybe = new Set(me.maybe || []);
+  const out = [];
+  for (const s of ranked) {
+    if (s.available.length === 0) break;
+    const avail = new Set(s.available.map((p) => p.id));
+    const missing = pool.filter((p) => !avail.has(p.id)).map((p) => ({ id: p.id, name: p.name }));
+    if (missing.length > maxMissing || !missing.some((p) => p.id === meId)) continue;
+    // nobody missing may have said "definitely not" to any hour of it (incl. me)
+    if (missing.some((p) => s.blocks.some((b) => noOf.get(p.id).has(b)))) continue;
+    if (out.some((o) => o.day === s.day && Math.abs(o.hour - s.hour) < cfg.sessionHours)) continue;
+    out.push({ ...s, total, missing, othersMissing: missing.filter((p) => p.id !== meId),
+      meMaybe: s.blocks.every((b) => myMaybe.has(b) || (me.blocks || []).includes(b)) });
+    if (out.length >= limit) break;
+  }
+  return out;
 }
 
 // ---------- formatting ----------

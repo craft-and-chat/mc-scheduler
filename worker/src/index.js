@@ -135,7 +135,7 @@ async function handle(request, env, url, now) {
       return json({
         id: p.id, name: p.name,
         recurring: rules.map(({ id, weekday, startHour, endHour, until }) => ({ id, weekday, startHour, endHour, until })),
-        responses: results.map((r) => { const x = parseResp(r); return { week: x.week, blocks: x.blocks, cant: x.cant, updatedAt: x.updatedAt }; }),
+        responses: results.map((r) => { const x = parseResp(r); return { week: x.week, blocks: x.blocks, maybe: x.maybe, no: x.no, cant: x.cant, updatedAt: x.updatedAt }; }),
       });
     }
   }
@@ -149,15 +149,20 @@ async function handle(request, env, url, now) {
     if (b.week > addDays(oWeek, 56)) throw bad('week is too far ahead');
     const cant = b.cant === true || b.cant === 1;
     if (cant && b.blocks === undefined) b.blocks = [];
-    if (!Array.isArray(b.blocks)) throw bad('blocks must be an array');
-    if (b.blocks.length > 7 * 30) throw bad('too many blocks');
-    if (!cant) for (const x of b.blocks) if (!isValidBlock(x, cfg)) throw bad(`invalid block: ${JSON.stringify(x)}`);
-    const blocks = cant ? [] : [...new Set(b.blocks)].sort((a, c) => a - c);
+    const lists = {};
+    for (const key of ['blocks', 'maybe', 'no']) {
+      const v = b[key] === undefined ? [] : b[key];
+      if (!Array.isArray(v)) throw bad(`${key} must be an array`);
+      if (v.length > 7 * 30) throw bad('too many blocks');
+      if (!cant) for (const x of v) if (!isValidBlock(x, cfg)) throw bad(`invalid block: ${JSON.stringify(x)}`);
+      lists[key] = cant ? [] : [...new Set(v)].sort((a, c) => a - c);
+    }
+    const { blocks, maybe, no } = lists;
     await env.DB.prepare(
-      `INSERT INTO responses (person_id, week, blocks, cant, updated_at) VALUES (?, ?, ?, ?, datetime('now'))
-       ON CONFLICT(person_id, week) DO UPDATE SET blocks=excluded.blocks, cant=excluded.cant, updated_at=excluded.updated_at`,
-    ).bind(personId, b.week, JSON.stringify(blocks), cant ? 1 : 0).run();
-    return json({ ok: true, status: cant ? 'cant' : 'responded', blocks });
+      `INSERT INTO responses (person_id, week, blocks, maybe, no, cant, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+       ON CONFLICT(person_id, week) DO UPDATE SET blocks=excluded.blocks, maybe=excluded.maybe, no=excluded.no, cant=excluded.cant, updated_at=excluded.updated_at`,
+    ).bind(personId, b.week, JSON.stringify(blocks), JSON.stringify(maybe), JSON.stringify(no), cant ? 1 : 0).run();
+    return json({ ok: true, status: cant ? 'cant' : 'responded', blocks, maybe, no });
   }
 
   if (path === '/api/availability' && method === 'DELETE') {

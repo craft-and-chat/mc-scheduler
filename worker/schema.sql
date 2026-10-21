@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS responses (
   person_id INTEGER NOT NULL,
   week TEXT NOT NULL,                       -- weekId (Monday, YYYY-MM-DD)
   blocks TEXT NOT NULL DEFAULT '[]',        -- JSON int[] (day*32+hour)
+  maybe TEXT NOT NULL DEFAULT '[]',         -- JSON int[] "maybe" hours
+  no TEXT NOT NULL DEFAULT '[]',            -- JSON int[] "definitely not" hours
   cant INTEGER NOT NULL DEFAULT 0,          -- 1 = "can't play this week"
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (person_id, week)

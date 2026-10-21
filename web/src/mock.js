@@ -5,7 +5,7 @@ import {
 } from '../../shared/schedule.js';
 import { getNow } from './clock.js';
 
-const KEY = 'mcs_mock_db_v1';
+const KEY = 'mcs_mock_db_v2';
 export const MOCK_ADMIN_KEY = 'admin';
 const qs = () => new URLSearchParams(location.search);
 const cfgOf = () => {
@@ -25,11 +25,11 @@ function seed() {
   const ow = openWeek(now, cfg), cw = currentWeek(now, cfg), pw = addDays(cw, -7);
   const stamp = iso(now);
   const people = ['Alex', 'Sam', 'Jo', 'Priya', 'Dan', 'Lee', 'Kai'].map((name, i) => ({ id: i + 1, name }));
-  const R = (personId, week, blocks, cant = false) => ({ personId, week, blocks, cant, updatedAt: stamp });
+  const R = (personId, week, blocks, cant = false, maybe = [], no = []) => ({ personId, week, blocks, maybe, no, cant, updatedAt: stamp });
   const responses = [
-    R(1, ow, [...run(4, 19, 24), ...run(5, 18, 23)]),
-    R(2, ow, [...run(5, 19, 24), ...run(6, 14, 20)]),
-    R(4, ow, [...run(3, 19, 22), ...run(4, 20, 24), ...run(5, 17, 22)]),
+    R(1, ow, run(4, 19, 24), false, run(5, 18, 23)), // Alex: Sat is only a maybe => nudge demo
+    R(2, ow, [...run(5, 19, 24), ...run(6, 14, 20)], false, [], run(4, 18, 24)),
+    R(4, ow, [...run(3, 19, 22), ...run(4, 20, 24), ...run(5, 17, 22)], false, run(6, 16, 20)),
     R(5, ow, [], true),
     R(7, ow, [...run(5, 19, 22), ...run(6, 15, 21)]),
     R(1, cw, run(5, 19, 23)), R(2, cw, run(5, 19, 23)), R(4, cw, run(5, 18, 23)),
@@ -62,7 +62,7 @@ function weekData(week, cfg, now) {
     const rules = d.rules.filter((r) => r.personId === p.id);
     const eff = effectiveBlocks(resp, rules, week, cfg);
     const active = rules.length > 0 || d.responses.some((r) => r.personId === p.id && r.week >= addDays(cw, -42));
-    return { id: p.id, name: p.name, status: eff.status, blocks: eff.blocks, updatedAt: resp ? resp.updatedAt : null, active };
+    return { id: p.id, name: p.name, status: eff.status, blocks: eff.blocks, maybe: eff.maybe, no: eff.no, updatedAt: resp ? resp.updatedAt : null, active };
   });
   return people;
 }
@@ -141,14 +141,17 @@ export async function mockRequest(method, path, query, body, headers) {
     const { personId, week, cant } = body || {};
     if (!d.people.some((p) => p.id === personId)) throw bad('unknown person', 404);
     if (!isWeekId(week) || week < cw || week > addDays(ow, 56)) throw bad('week out of range');
-    let blocks = Array.isArray(body.blocks) ? body.blocks : [];
-    if (!blocks.every((b) => isValidBlock(b, cfg)) || blocks.length > 210) throw bad('bad blocks');
-    blocks = cant ? [] : [...new Set(blocks)].sort((a, b) => a - b);
-    const rec = { personId, week, blocks, cant: !!cant, updatedAt: iso(now) };
+    const list = (v) => {
+      const a = Array.isArray(v) ? v : [];
+      if (!a.every((b) => isValidBlock(b, cfg)) || a.length > 210) throw bad('bad blocks');
+      return cant ? [] : [...new Set(a)].sort((x, y) => x - y);
+    };
+    const blocks = list(body.blocks), maybe = list(body.maybe), no = list(body.no);
+    const rec = { personId, week, blocks, maybe, no, cant: !!cant, updatedAt: iso(now) };
     const i = d.responses.findIndex((r) => r.personId === personId && r.week === week);
     if (i >= 0) d.responses[i] = rec; else d.responses.push(rec);
     persist();
-    return { ok: true, status: cant ? 'cant' : (blocks.length ? 'responded' : 'waiting'), blocks };
+    return { ok: true, status: cant ? 'cant' : (blocks.length || maybe.length || no.length ? 'responded' : 'waiting'), blocks, maybe, no };
   }
 
   if (method === 'DELETE' && path === '/api/availability') {

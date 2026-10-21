@@ -135,7 +135,7 @@ test('state shape', async () => {
   assert.equal(st.config.sessionHours, 2);
   assert.ok('mcServerAddress' in st.config && 'discordInviteUrl' in st.config);
   assert.equal(st.session, null); assert.equal(st.currentSession, null);
-  assert.deepEqual(Object.keys(st.people[0]).sort(), ['active', 'blocks', 'id', 'name', 'status', 'updatedAt']);
+  assert.deepEqual(Object.keys(st.people[0]).sort(), ['active', 'blocks', 'id', 'maybe', 'name', 'no', 'status', 'updatedAt']);
   // default week = open week
   const d = (await api('GET', '/api/state')).json;
   assert.equal(d.week, OPEN);
@@ -219,4 +219,38 @@ test('admin auth and delete person', async () => {
 test('404 is JSON', async () => {
   const r = await api('GET', '/api/nope');
   assert.equal(r.status, 404); assert.ok(r.json.error);
+});
+
+test('maybe / no round-trip, precedence, only-no counts as answered, cant clears', async () => {
+  const p = await mk('Maybe Person');
+  const T = (h) => blockId(1, h);
+  let r = await api('PUT', '/api/availability', { personId: p.id, week: OPEN, blocks: [T(19)], maybe: [T(19), T(20), T(20)], no: [T(21), T(20)] });
+  assert.equal(r.status, 200);
+  assert.deepEqual([r.json.blocks, r.json.maybe, r.json.no], [[T(19)], [T(19), T(20)], [T(20), T(21)]]); // stored as sent (deduped)
+  let e = me(await state(), p.id);
+  assert.equal(e.status, 'responded');
+  assert.deepEqual([e.blocks, e.maybe, e.no], [[T(19)], [T(20)], [T(21)]]); // effective: free > maybe > no
+  const g = (await api('GET', `/api/people/${p.id}`)).json;
+  assert.deepEqual(g.responses[0].maybe, [T(19), T(20)]);
+  assert.deepEqual(g.responses[0].blocks, [T(19)]);
+  assert.ok(g.responses[0].no.includes(T(21)));
+  // validation
+  assert.equal((await api('PUT', '/api/availability', { personId: p.id, week: OPEN, maybe: [999] })).status, 400);
+  assert.equal((await api('PUT', '/api/availability', { personId: p.id, week: OPEN, no: 'x' })).status, 400);
+  // only "no" counts as answered (overrides regular times)
+  const q = await mk('No Only');
+  await api('POST', '/api/recurring', { personId: q.id, weekday: 3, startHour: 19, endHour: 21 });
+  assert.equal(me(await state(), q.id).status, 'regular');
+  await api('PUT', '/api/availability', { personId: q.id, week: OPEN, blocks: [], no: [blockId(3, 19)] });
+  e = me(await state(), q.id);
+  assert.equal(e.status, 'responded'); assert.deepEqual(e.blocks, []); assert.deepEqual(e.no, [blockId(3, 19)]);
+  // omitted maybe/no default to empty
+  await api('PUT', '/api/availability', { personId: p.id, week: OPEN, blocks: [T(19)] });
+  e = me(await state(), p.id);
+  assert.deepEqual([e.maybe, e.no], [[], []]);
+  // cant clears everything
+  r = await api('PUT', '/api/availability', { personId: p.id, week: OPEN, blocks: [T(19)], maybe: [T(20)], no: [T(21)], cant: true });
+  assert.equal(r.json.status, 'cant'); assert.deepEqual([r.json.blocks, r.json.maybe, r.json.no], [[], [], []]);
+  e = me(await state(), p.id);
+  assert.deepEqual([e.status, e.maybe, e.no], ['cant', [], []]);
 });

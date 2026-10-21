@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import {
-  addDays, rankSlots, quickPicks, formatWeek, formatSlot, googleCalendarUrl, blockStart,
+  addDays, rankSlots, quickPicks, fullHouseNudges, formatWeek, formatSlot, googleCalendarUrl, blockStart,
 } from '../../shared/schedule.js';
 import { api, MOCK, store } from './api.js';
 import { Grid } from './Grid.jsx';
@@ -14,6 +14,8 @@ const STATUS_TEXT = {
   waiting: ['⏳', 'Not answered yet'],
 };
 
+const BRUSHES = [['free', '✓ Free'], ['maybe', '? Maybe'], ['no', '✗ No']];
+
 function namesLine(list, max = 3) {
   const n = list.map((x) => x.name);
   return n.slice(0, max).join(', ') + (n.length > max ? ` +${n.length - max}` : '');
@@ -26,6 +28,9 @@ export function WeekScreen({ me, now, onSwitch }) {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [mine, setMineState] = useState(new Set());
+  const [maybe, setMaybeState] = useState(new Set());
+  const [no, setNoState] = useState(new Set());
+  const [brush, setBrush] = useState('free');
   const [cant, setCantState] = useState(false);
   const [status, setStatus] = useState('waiting');
   const [morning, setMorning] = useState(false);
@@ -34,11 +39,13 @@ export function WeekScreen({ me, now, onSwitch }) {
   const [dismissed, setDismissed] = useState(() => store.get('mcs_prompt_off') === '1');
   const [copied, setCopied] = useState(false);
 
-  const mineRef = useRef(mine), cantRef = useRef(cant), weekRef = useRef(null);
+  const mineRef = useRef(mine), maybeRef = useRef(maybe), noRef = useRef(no), cantRef = useRef(cant), weekRef = useRef(null);
   const dirty = useRef(false), timer = useRef(null), queue = useRef(Promise.resolve()), fade = useRef(null);
   const nowRef = useRef(now); nowRef.current = now;
 
   const setMine = (s) => { mineRef.current = s; setMineState(s); };
+  const setMaybe = (s) => { maybeRef.current = s; setMaybeState(s); };
+  const setNo = (s) => { noRef.current = s; setNoState(s); };
   const setCant = (v) => { cantRef.current = v; setCantState(v); };
 
   const doSave = async () => {
@@ -47,7 +54,8 @@ export function WeekScreen({ me, now, onSwitch }) {
     dirty.current = false;
     setPill('saving');
     try {
-      await api.save(me.id, week, [...mineRef.current].sort((a, b) => a - b), cantRef.current);
+      const arr = (x) => [...x].sort((a, b) => a - b);
+      await api.save(me.id, week, arr(mineRef.current), cantRef.current, arr(maybeRef.current), arr(noRef.current));
       if (!dirty.current) {
         setPill('saved'); setPromptOk(true);
         clearTimeout(fade.current);
@@ -70,7 +78,7 @@ export function WeekScreen({ me, now, onSwitch }) {
       if (!mePerson) { onSwitch(); return; }
       setSt(s); setDetail(d); weekRef.current = s.week;
       if (reset && !dirty.current) {
-        setMine(new Set(mePerson.blocks)); setCant(mePerson.status === 'cant'); setStatus(mePerson.status);
+        setMine(new Set(mePerson.blocks)); setMaybe(new Set(mePerson.maybe || [])); setNo(new Set(mePerson.no || [])); setCant(mePerson.status === 'cant'); setStatus(mePerson.status);
       }
     } catch (e) { setErr(e.network ? "Couldn't reach the server." : e.message); }
   }, [me.id]);
@@ -91,17 +99,22 @@ export function WeekScreen({ me, now, onSwitch }) {
     await load(w, true); setBusy(false);
   };
 
-  const edit = (nextMine) => {
-    setMine(nextMine); setCant(false); setStatus(nextMine.size ? 'responded' : 'waiting'); schedule();
+  const edit = (nextMine, nextMaybe = maybeRef.current, nextNo = noRef.current) => {
+    setMine(nextMine); setMaybe(nextMaybe); setNo(nextNo); setCant(false);
+    setStatus(nextMine.size || nextMaybe.size || nextNo.size ? 'responded' : 'waiting'); schedule();
   };
+  // value: 'free' | 'maybe' | 'no' | null (clear the hours)
   const onApply = (blocks, value) => {
-    const s = new Set(mineRef.current);
-    for (const b of blocks) value ? s.add(b) : s.delete(b);
-    edit(s);
+    const f = new Set(mineRef.current), m = new Set(maybeRef.current), n = new Set(noRef.current);
+    for (const b of blocks) {
+      f.delete(b); m.delete(b); n.delete(b);
+      if (value === 'free') f.add(b); else if (value === 'maybe') m.add(b); else if (value === 'no') n.add(b);
+    }
+    edit(f, m, n);
   };
   const toggleCant = async () => {
     if (!cantRef.current) {
-      setMine(new Set()); setCant(true); setStatus('cant'); schedule(); return;
+      setMine(new Set()); setMaybe(new Set()); setNo(new Set()); setCant(true); setStatus('cant'); schedule(); return;
     }
     clearTimeout(timer.current); dirty.current = false; await queue.current;
     setPill('saving');
@@ -109,8 +122,8 @@ export function WeekScreen({ me, now, onSwitch }) {
     catch { setPill('error'); }
   };
   const sameAsLast = (prev) => {
-    const s = new Set(prev.blocks.filter((b) => blockStart(weekRef.current, b, cfg) >= nowRef.current));
-    edit(s);
+    const fut = (a) => new Set((a || []).filter((b) => blockStart(weekRef.current, b, cfg) >= nowRef.current));
+    edit(fut(prev.blocks), fut(prev.maybe), fut(prev.no));
   };
   const reloadAll = async () => { await flush(); await load(weekRef.current, true); };
   const makeRegular = async () => {
@@ -134,7 +147,11 @@ export function WeekScreen({ me, now, onSwitch }) {
   }
 
   const cfg = st.config, week = st.week, today = st.now.slice(0, 10);
-  const people = st.people.map((p) => (p.id === me.id ? { ...p, blocks: [...mine], status } : p));
+  const people = st.people.map((p) => (p.id === me.id ? { ...p, blocks: [...mine], maybe: [...maybe], no: [...no], status } : p));
+  const states = new Map();
+  for (const b of no) states.set(b, 'no');
+  for (const b of maybe) states.set(b, 'maybe');
+  for (const b of mine) states.set(b, 'free');
   const others = people.filter((p) => p.id !== me.id);
   const counts = new Map();
   for (const p of others) for (const b of p.blocks) counts.set(b, (counts.get(b) || 0) + 1);
@@ -143,11 +160,12 @@ export function WeekScreen({ me, now, onSwitch }) {
   const viewStart = Math.max(cfg.dayStartHour, cfg.viewStartHour ?? cfg.dayStartHour);
   const hasEarly = viewStart > cfg.dayStartHour;
   const isEarly = (b) => b % 32 < viewStart;
-  const myEarly = [...mine].some(isEarly);
+  const myEarly = [...states.keys()].some(isEarly);
   const othersEarly = others.filter((p) => p.blocks.some(isEarly)).length;
   const showMorning = morning || myEarly;
   const ranked = rankSlots(people, week, cfg, { notBefore: now });
   const best3 = quickPicks(ranked, cfg, 3);
+  const nudges = st.locked || cant ? [] : fullHouseNudges(me.id, people, week, cfg, { notBefore: now });
 
   const weeks = [];
   for (let w = st.currentWeek; w <= addDays(st.openWeek, 21); w = addDays(w, 7)) weeks.push(w);
@@ -205,7 +223,7 @@ export function WeekScreen({ me, now, onSwitch }) {
             ? <span>🔒 <b>Locked in: {st.session.label}</b> ({st.session.attendees.length} playing)</span>
             : <span>🔒 No session this week — not enough players.</span>)
           : lead && lead.available.length
-            ? <span>🏆 <b>Leading so far: {formatSlot(week, lead, cfg)}</b> ({lead.available.length} of {answered.length} who answered)</span>
+            ? <span>🏆 <b>Leading so far: {formatSlot(week, lead, cfg)}</b> ({lead.available.length} of {answered.length} who answered{lead.maybe.length ? `, +${lead.maybe.length} maybe` : ''})</span>
             : <span>No times yet — be the first!</span>}
       </section>
 
@@ -226,11 +244,37 @@ export function WeekScreen({ me, now, onSwitch }) {
             <button class="btn wide" data-testid="toggle-morning" onClick={() => setMorning(!morning)}>
               {showMorning ? 'Hide morning times ▴' : `Show morning times ▾${othersEarly ? ` (${othersEarly} free)` : ''}`}</button>
           )}
-          <Grid cfg={cfg} week={week} now={now} mine={mine} counts={counts} maxCount={maxCount} onApply={onApply}
+          <div class="brush" role="radiogroup" aria-label="Paint with" data-testid="brush">
+            {BRUSHES.map(([k, t]) => (
+              <button key={k} type="button" role="radio" aria-checked={brush === k} data-testid={'brush-' + k}
+                class={'bt bt-' + k + (brush === k ? ' sel' : '')} onClick={() => setBrush(k)}>{t}</button>
+            ))}
+          </div>
+          <Grid cfg={cfg} week={week} now={now} states={states} brush={brush} counts={counts} maxCount={maxCount} onApply={onApply}
             fromHour={showMorning ? cfg.dayStartHour : viewStart} />
-          <p class="muted small center">Tap hours you're free · hold &amp; drag to select many</p>
+          <p class="muted small center">Pick ✓ ? ✗ above, then tap hours · hold &amp; drag to paint many</p>
         </section>
       </div>
+
+      {nudges.map((n) => {
+        const others = n.othersMissing.map((p) => p.name);
+        return (
+          <section key={n.day + '-' + n.hour} class="card nudge" data-testid="nudge">
+            <b>⚠️ Can you do {formatSlot(week, n, cfg)}?</b>
+            <p class="small">
+              {others.length === 0
+                ? `You're the only one missing — everyone else (${n.total - 1} of ${n.total}) can make it. Full house!`
+                : `Only you and ${others.join(' and ')} are missing for a full house (${n.available.length} of ${n.total}).`}
+              {n.meMaybe ? ' You said maybe — can you confirm?' : ''}
+            </p>
+            <div class="row wrapRow">
+              <button class="btn primary" data-testid="nudge-yes" onClick={() => onApply(n.blocks, 'free')}>Yes, I can</button>
+              {!n.meMaybe && <button class="btn" data-testid="nudge-maybe" onClick={() => onApply(n.blocks, 'maybe')}>Maybe</button>}
+              <button class="btn danger" data-testid="nudge-no" onClick={() => onApply(n.blocks, 'no')}>Definitely not</button>
+            </div>
+          </section>
+        );
+      })}
 
       {promptOk && !dismissed && rules.length === 0 && mine.size > 0 && pill !== 'saving' && (
         <div class="card prompt" data-testid="regular-prompt">
@@ -255,6 +299,7 @@ export function WeekScreen({ me, now, onSwitch }) {
           <div key={s.day + '-' + s.hour} class="best">
             <b>{formatSlot(week, s, cfg)}</b>
             <div class="small">{s.available.length} can play: {namesLine(s.available, 6)}</div>
+            {s.maybe.length > 0 && <div class="small muted">maybe: {namesLine(s.maybe, 6)}</div>}
             {s.partial.length > 0 && <div class="small muted">partly: {namesLine(s.partial, 6)}</div>}
           </div>
         ))}

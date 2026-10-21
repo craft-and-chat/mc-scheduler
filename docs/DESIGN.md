@@ -51,6 +51,12 @@ People can fill in any upcoming week at any time; the posts are just nudges.
 
 ## Data model
 See `worker/schema.sql`: `people`, `responses`, `recurring`, `sessions`, `sent_events`.
+`responses` has three JSON hour lists: `blocks` (✓ Free), `maybe` (? Maybe), `no` (✗ Definitely not).
+Precedence if an hour is in several: free > maybe > no. A response with any list non-empty counts as answered.
+`cant` clears all three. Regular times only ever produce free hours. Existing DBs: run
+`worker/migrations/0001_maybe_no.sql`. `PUT /api/availability` takes optional `maybe`/`no` int[]; `/api/state`
+people entries and `/api/people/:id` responses include them. Ranking: most free, then most maybe, then partial;
+the Discord lock/soon message appends "(maybe: X, Y)" for the chosen slot.
 
 ## HTTP API (Worker)
 
@@ -209,3 +215,12 @@ Post open / Post reminder / Post test message; people list with rename + delete 
 - `?mock=1` (or `VITE_MOCK=1`) runs against an in-browser fake API implementing the same contract
   using `shared/schedule.js` and localStorage, seeded with ~6 fake friends. Used for development and
   screenshots before the backend is deployed.
+
+### Maybe / No brushes and full-house nudges
+- A segmented brush bar ([✓ Free] [? Maybe] [✗ No], default Free, sticky above the grid) sets what taps paint.
+  Tapping/painting a cell that already has the brush state clears it; a drag paints the brush (or clears, if the
+  first cell already had it). Day headers set all visible non-past hours to the brush, or clear them if all already match.
+- Cells: free = solid green ✓, maybe = amber ?, no = dashed red ✗ (symbols keep it colour-blind safe); unmarked = heatmap of others' free counts.
+- `fullHouseNudges()` (shared/schedule.js) finds slots where the viewer is one of at most 2 people missing for everyone
+  who answered, only if no full house exists yet and nobody missing said ✗ on it. Cards render below the grid for
+  unlocked weeks, computed from the live local (unsaved) answers: [Yes, I can] / [Maybe] / [Definitely not], saved via normal autosave.
