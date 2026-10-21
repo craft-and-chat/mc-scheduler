@@ -1,0 +1,52 @@
+# Builds web/ and deploys it to GitHub Pages.
+# Set repository variable API_URL (Settings → Secrets and variables → Actions → Variables)
+# to your Worker URL, e.g. https://mc-scheduler.<you>.workers.dev
+# If API_URL is not set, the site is built in demo (mock) mode.
+name: Deploy web to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths: ['web/**', 'shared/**', '.github/workflows/pages.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npm run build
+        working-directory: web
+        env:
+          VITE_API_URL: ${{ vars.API_URL }}
+          VITE_MOCK: ${{ vars.API_URL == '' && '1' || '' }}
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

@@ -1,0 +1,29 @@
+# Optional: auto-deploy the Cloudflare Worker on push.
+# Needs repository secrets CLOUDFLARE_API_TOKEN (template "Edit Cloudflare Workers") and CLOUDFLARE_ACCOUNT_ID.
+# Without them this workflow does nothing — you can always deploy manually with `npm run deploy` in worker/.
+name: Deploy worker
+
+on:
+  push:
+    branches: [main]
+    paths: ['worker/**', 'shared/**', '.github/workflows/worker.yml']
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v7
+        if: env.CLOUDFLARE_API_TOKEN != ''
+      - uses: actions/setup-node@v7
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        with:
+          node-version: 22
+      - run: npm ci && npx wrangler d1 execute mc-scheduler --remote --file=schema.sql && npx wrangler deploy
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        working-directory: worker
+      - run: echo "CLOUDFLARE_API_TOKEN not set — skipping worker deploy."
+        if: env.CLOUDFLARE_API_TOKEN == ''

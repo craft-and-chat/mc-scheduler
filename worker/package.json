@@ -1,0 +1,15 @@
+{
+  "name": "mc-scheduler-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local --port 8787",
+    "deploy": "wrangler deploy",
+    "db:init:local": "wrangler d1 execute mc-scheduler --local --file=schema.sql",
+    "db:init:remote": "wrangler d1 execute mc-scheduler --remote --file=schema.sql",
+    "test": "node --test --test-concurrency=1 --test-timeout=180000 test/schedule.test.js test/api.test.js test/cron.test.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}

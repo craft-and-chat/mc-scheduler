@@ -1,0 +1,34 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mc-scheduler",
+  "main": "src/index.js",
+  "compatibility_date": "2025-09-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "mc-scheduler",
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+    }
+  ],
+  "triggers": { "crons": ["*/15 * * * *"] },
+  "vars": {
+    "TIMEZONE": "Europe/London",
+    "DAY_START_HOUR": "12",
+    "DAY_END_HOUR": "24",
+    "SESSION_HOURS": "2",
+    "MIN_PLAYERS": "2",
+    "OPEN_DAYS_BEFORE": "3",
+    "OPEN_HOUR": "12",
+    "REMINDER_DAYS_BEFORE": "2",
+    "REMINDER_HOUR": "18",
+    "LOCK_DAYS_BEFORE": "1",
+    "LOCK_HOUR": "18",
+    "SESSION_REMINDER_MINUTES": "60",
+    "APP_NAME": "Craft & Chat",
+    "APP_URL": "https://craft-and-chat.github.io/mc-scheduler/",
+    "MC_SERVER_ADDRESS": "",
+    "DISCORD_INVITE_URL": "",
+    "DISCORD_MENTION": "",
+    "ALLOWED_ORIGINS": "https://craft-and-chat.github.io,http://localhost:5173,http://localhost:4173"
+  }
+}

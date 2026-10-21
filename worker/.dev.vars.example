@@ -1,0 +1,8 @@
+# Copy to .dev.vars (gitignored) for local dev
+ADMIN_KEY=dev-admin-key
+# ACCESS_CODE=friends
+# DISCORD_WEBHOOK_URL=
+# DISCORD_BOT_TOKEN=
+# DISCORD_GUILD_ID=
+# Allows X-Fake-Now header (DEV ONLY)
+DEV_FAKE_NOW_ALLOWED=1
