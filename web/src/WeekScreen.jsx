@@ -5,7 +5,7 @@ import {
 import { api, MOCK, store } from './api.js';
 import { Grid } from './Grid.jsx';
 import { RegularCard } from './Regular.jsx';
-import { blocksToRuns, copyText, formatLock, tzNote } from './util.js';
+import { blocksToRuns, copyText, tzNote } from './util.js';
 
 const STATUS_TEXT = {
   responded: ["✅", "You've answered"],
@@ -188,6 +188,11 @@ export function WeekScreen({ me, now, onSwitch }) {
   const weeks = [];
   for (let w = st.currentWeek; w <= addDays(st.openWeek, 21); w = addDays(w, 7)) weeks.push(w);
   const wi = weeks.indexOf(week);
+  const wdiff = Math.round((Date.parse(week) - Date.parse(st.currentWeek)) / (7 * 864e5));
+  const rel = wdiff === 0 ? { label: '📍 THIS WEEK', lower: 'this week', cls: 'this' }
+    : wdiff === 1 ? { label: '📅 NEXT WEEK', lower: 'next week', cls: 'next' }
+    : wdiff > 1 ? { label: `⏩ IN ${wdiff} WEEKS`, lower: 'that week', cls: 'later' }
+    : { label: '⏪ PAST WEEK', lower: 'that week', cls: 'later' };
 
   const answered = people.filter((p) => (p.status === 'responded' || p.status === 'regular') && p.blocks.length);
   const lockedSessions = (st.sessions || []).filter((x) => x.status === 'scheduled');
@@ -218,9 +223,10 @@ export function WeekScreen({ me, now, onSwitch }) {
 
       {showBanner && (
         <section class="card banner-session" data-testid="this-week">
+          <span class="when when-this bs-tag">📍 THIS WEEK'S {cSessions.length > 1 ? 'SESSIONS' : 'SESSION'}</span>
           {cSessions.map((x) => (
             <div key={x.start} class="bs-row" data-testid="this-week-session">
-              <div>🎮 <b>{cSessions.length > 1 ? x.label : `This week: ${x.label}`}</b> — {x.attendees.length} playing</div>
+              <div>🎮 <b>{x.label}</b> — {x.attendees.length} playing</div>
               <a class="btn" target="_blank" rel="noopener"
                 href={googleCalendarUrl({ start: new Date(x.start), end: new Date(x.end), title: cfg.appName, details: server ? `Server: ${server}` : '', location: server || '' })}>
                 Add to calendar</a>
@@ -239,7 +245,8 @@ export function WeekScreen({ me, now, onSwitch }) {
         <button class="btn sq" aria-label="Previous week" disabled={wi <= 0 || busy} onClick={() => goWeek(weeks[wi - 1])}>‹</button>
         <div class="wk" data-testid="week-label">
           <b>{formatWeek(week)}</b>
-          <span class="muted small">{st.locked ? 'Locked ✓' : `Decided ${formatLock(st.lockAt, cfg)}`}{week === st.currentWeek ? ' · this week' : ''}</span>
+          <span class={'when when-' + rel.cls} data-testid="week-rel">{rel.label}</span>
+          {st.locked && <span class="muted small">Locked ✓</span>}
         </div>
         <button class="btn sq" aria-label="Next week" disabled={wi >= weeks.length - 1 || busy} onClick={() => goWeek(weeks[wi + 1])}>›</button>
       </div>
@@ -273,7 +280,7 @@ export function WeekScreen({ me, now, onSwitch }) {
         <div class="row wrapRow">
           {canSame && <button class="btn" data-testid="same-last" onClick={() => sameAsLast(prev)}>Same as last week</button>}
           <button class={'btn' + (cant ? ' danger' : '')} aria-pressed={cant} data-testid="cant" onClick={toggleCant}>
-            {cant ? '✓ Can’t play — undo' : 'Can’t play this week'}</button>
+            {cant ? '✓ Can’t play — undo' : `Can’t play ${rel.lower}`}</button>
         </div>
         {status === 'regular' && <p class="muted small">↻ You're in via your regular times. Different this week? Tweak below.</p>}
         {cant && <p class="muted small">Changed your mind? Tap a time.</p>}

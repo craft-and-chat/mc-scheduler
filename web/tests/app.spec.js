@@ -76,7 +76,7 @@ test('grid: tap toggles, day header toggles, persists', async ({ page }) => {
 
 test('past hours are disabled in current week', async ({ page }) => {
   await join(page);
-  await page.getByRole('button', { name: 'Previous week' }).click();
+  await page.getByRole('button', { name: 'Previous week', exact: true }).click();
   await expect(page.getByTestId('week-label')).toContainText('19 Oct');
   await openGrid(page);
   await expect(cell(page, 0, 12)).toHaveClass(/past/);
@@ -161,7 +161,7 @@ test("can't play toggles and undoes", async ({ page }) => {
 test('same as last week appears for returning person', async ({ page }) => {
   await page.goto(URL);
   await page.getByRole('button', { name: 'Sam' }).click();
-  await page.getByRole('button', { name: 'Next week' }).click();
+  await page.getByRole('button', { name: 'Next week', exact: true }).click();
   await expect(page.getByTestId('week-label')).toContainText('2 Nov');
   await page.getByTestId('same-last').click();
   await expect(page.getByTestId('status')).toContainText("You've answered");
@@ -354,7 +354,7 @@ test('locked (current) week lists both sessions; banner shows both; no overflow'
   await expect(banner.getByRole('link', { name: 'Add to calendar' })).toHaveCount(2);
   await expect(banner.getByRole('button', { name: /Copy/ })).toHaveCount(1);
   await noOverflow(page);
-  await page.getByRole('button', { name: 'Previous week' }).click();
+  await page.getByRole('button', { name: 'Previous week', exact: true }).click();
   await expect(page.getByTestId('week-label')).toContainText('19 Oct');
   const leader = page.getByTestId('leader');
   await expect(leader).toContainText('Locked in');
@@ -410,4 +410,19 @@ test('admin grid: tap a tile to see who is free', async ({ page }) => {
   await shot(page, '18-admin-grid');
   await page.locator('[data-ab="179"]').click();
   await expect(d).toHaveCount(0);
+});
+
+test('week switcher says NEXT WEEK / THIS WEEK clearly, no "Decided" line', async ({ page }) => {
+  await join(page, 'Week Reader');
+  await expect(page.getByTestId('week-rel')).toHaveText('📅 NEXT WEEK');
+  await expect(page.getByTestId('week-label')).not.toContainText('Decided');
+  await expect(page.getByTestId('cant')).toHaveText('Can’t play next week');
+  await shot(page, '24-next-week-badge');
+  await page.getByRole('button', { name: 'Previous week', exact: true }).click();
+  await expect(page.getByTestId('week-rel')).toHaveText('📍 THIS WEEK');
+  await expect(page.getByTestId('cant')).toHaveText('Can’t play this week');
+  await page.getByRole('button', { name: 'Next week', exact: true }).click();
+  await page.getByRole('button', { name: 'Next week', exact: true }).click();
+  await expect(page.getByTestId('week-rel')).toHaveText('⏩ IN 2 WEEKS');
+  await noOverflow(page);
 });

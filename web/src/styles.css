@@ -156,3 +156,10 @@ summary { cursor: pointer; min-height: 32px; }
 .summary.all { color: var(--accent); font-weight: 600; }
 .bs-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .bs-row > div { min-width: 0; flex: 1 1 200px; }
+.wk b { order: 2; }
+.wk .when { order: 1; font-weight: 800; letter-spacing: .04em; font-size: 1.05rem; padding: 4px 12px; border-radius: 999px; margin-bottom: 4px; }
+.wk .muted { order: 3; }
+.when-next { background: var(--accent); color: var(--accent-ink); }
+.when-this { background: #f2c14e; color: #1d1500; }
+.when-later { background: var(--border); color: var(--text); }
+.bs-tag { display: inline-block; font-weight: 800; letter-spacing: .04em; font-size: .85rem; padding: 3px 10px; border-radius: 999px; margin-bottom: 6px; }
