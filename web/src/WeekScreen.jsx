@@ -241,11 +241,11 @@ export function WeekScreen({ me, now, onSwitch }) {
         </section>
       )}
 
+      <div class={'when-big when-' + rel.cls} data-testid="week-rel">{rel.label}</div>
       <div class="switcher">
         <button class="btn sq" aria-label="Previous week" disabled={wi <= 0 || busy} onClick={() => goWeek(weeks[wi - 1])}>‹</button>
         <div class="wk" data-testid="week-label">
           <b>{formatWeek(week)}</b>
-          <span class={'when when-' + rel.cls} data-testid="week-rel">{rel.label}</span>
           {st.locked && <span class="muted small">Locked ✓</span>}
         </div>
         <button class="btn sq" aria-label="Next week" disabled={wi >= weeks.length - 1 || busy} onClick={() => goWeek(weeks[wi + 1])}>›</button>

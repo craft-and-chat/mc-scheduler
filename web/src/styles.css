@@ -163,3 +163,4 @@ summary { cursor: pointer; min-height: 32px; }
 .when-this { background: #f2c14e; color: #1d1500; }
 .when-later { background: var(--border); color: var(--text); }
 .bs-tag { display: inline-block; font-weight: 800; letter-spacing: .04em; font-size: .85rem; padding: 3px 10px; border-radius: 999px; margin-bottom: 6px; }
+.when-big { display: block; text-align: center; font-weight: 900; letter-spacing: .05em; font-size: clamp(1.9rem, 9vw, 2.6rem); line-height: 1.1; padding: 14px 10px; border-radius: 16px; margin-bottom: 8px; }
