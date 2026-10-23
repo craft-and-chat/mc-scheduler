@@ -1,17 +1,18 @@
 // In-browser fake of the Worker API (same contract as docs/DESIGN.md). Data lives in localStorage.
 import {
   parseConfig, openWeek, currentWeek, lockTime, addDays, isWeekId, isValidBlock, blockId,
-  effectiveBlocks, rulesToBlocks, rankSlots, pickSession, formatSlot,
+  effectiveBlocks, rulesToBlocks, rankSlots, pickSessions, formatSlot,
 } from '../../shared/schedule.js';
 import { getNow } from './clock.js';
 
-const KEY = 'mcs_mock_db_v2';
+const KEY = 'mcs_mock_db_v3';
 export const MOCK_ADMIN_KEY = 'admin';
 const qs = () => new URLSearchParams(location.search);
 const cfgOf = () => {
   const empty = qs().has('empty');
+  const spw = Number(qs().get('sessions'));
   return {
-    ...parseConfig({}),
+    ...parseConfig(spw ? { SESSIONS_PER_WEEK: String(spw) } : {}),
     appName: 'Craft & Chat',
     mcServerAddress: empty ? '' : 'play.example.net',
     discordInviteUrl: empty ? '' : 'https://discord.gg/example',
@@ -27,12 +28,13 @@ function seed() {
   const people = ['Alex', 'Sam', 'Jo', 'Priya', 'Dan', 'Lee', 'Kai'].map((name, i) => ({ id: i + 1, name }));
   const R = (personId, week, blocks, cant = false, maybe = [], no = []) => ({ personId, week, blocks, maybe, no, cant, updatedAt: stamp });
   const responses = [
-    R(1, ow, run(4, 19, 24), false, run(5, 18, 23)), // Alex: Sat is only a maybe => nudge demo
+    R(1, ow, run(4, 19, 24)), // Alex: only Fri evening => in neither planned session => coverage nudge demo
     R(2, ow, [...run(5, 19, 24), ...run(6, 14, 20)], false, [], run(4, 18, 24)),
-    R(4, ow, [...run(3, 19, 22), ...run(4, 20, 24), ...run(5, 17, 22)], false, run(6, 16, 20)),
+    R(4, ow, [...run(3, 19, 22), ...run(4, 20, 24), ...run(5, 17, 22)]),
+    R(6, ow, run(3, 19, 22)), // Lee: Thu with Priya => the second planned session
     R(5, ow, [], true),
     R(7, ow, [...run(5, 19, 22), ...run(6, 15, 21)]),
-    R(1, cw, run(5, 19, 23)), R(2, cw, run(5, 19, 23)), R(4, cw, run(5, 18, 23)),
+    R(1, cw, run(5, 19, 23)), R(2, cw, run(5, 19, 23)), R(4, cw, [...run(3, 20, 23), ...run(5, 18, 23)]), R(6, cw, run(3, 20, 23)),
     R(1, pw, run(5, 18, 22)), R(2, pw, run(6, 15, 20)),
   ];
   const rules = [
@@ -67,16 +69,18 @@ function weekData(week, cfg, now) {
   return people;
 }
 
-const mkSession = (week, top, cfg) => top ? {
+const mkSession = (week, top, cfg) => ({
   week, status: 'scheduled', day: top.day, hour: top.hour, start: iso(top.start), end: iso(top.end),
   attendees: top.available.map((a) => a.name), label: formatSlot(week, top, cfg),
-} : { week, status: 'none' };
+});
+const mkSessions = (week, tops, cfg) => (tops.length ? tops.map((t) => mkSession(week, t, cfg)) : [{ week, status: 'none' }]);
 
-function sessionFor(week, cfg, now, people) {
+// Array of sessions for a week ([] = not locked yet / unlocked).
+function sessionsFor(week, cfg, now, people) {
   const d = load();
-  if (week in d.sessions) return d.sessions[week];
-  if (lockTime(week, cfg) > now) return null;
-  return mkSession(week, pickSession(rankSlots(people, week, cfg), cfg), cfg);
+  if (week in d.sessions) return d.sessions[week] || [];
+  if (lockTime(week, cfg) > now) return [];
+  return mkSessions(week, pickSessions(rankSlots(people, week, cfg), cfg), cfg);
 }
 
 function mergeRuleIntoResponses(personId, rule, cfg, ow) {
@@ -101,11 +105,12 @@ export async function mockRequest(method, path, query, body, headers) {
     const week = query.get('week') || ow;
     if (!isWeekId(week)) throw bad('bad week');
     const people = weekData(week, cfg, now);
+    const sessions = sessionsFor(week, cfg, now, people);
+    const currentSessions = sessionsFor(cw, cfg, now, weekData(cw, cfg, now));
     return {
       now: iso(now), openWeek: ow, currentWeek: cw, week, lockAt: iso(lockTime(week, cfg)),
-      locked: lockTime(week, cfg) <= now, config: cfg, people,
-      session: sessionFor(week, cfg, now, people),
-      currentSession: sessionFor(cw, cfg, now, weekData(cw, cfg, now)),
+      locked: lockTime(week, cfg) <= now || sessions.length > 0, config: cfg, people,
+      sessions, session: sessions[0] || null, currentSessions, currentSession: currentSessions[0] || null,
     };
   }
 
@@ -183,10 +188,10 @@ export async function mockRequest(method, path, query, body, headers) {
     if (path === '/api/admin/lock') {
       const week = body?.week;
       const people = weekData(week, cfg, now);
-      d.sessions[week] = mkSession(week, pickSession(rankSlots(people, week, cfg, { notBefore: now }), cfg), cfg);
-      persist(); return { ok: true };
+      d.sessions[week] = mkSessions(week, pickSessions(rankSlots(people, week, cfg, { notBefore: now }), cfg), cfg);
+      persist(); return { ok: true, sessions: d.sessions[week], session: d.sessions[week][0] };
     }
-    if (path === '/api/admin/unlock') { d.sessions[body?.week] = null; persist(); return { ok: true }; }
+    if (path === '/api/admin/unlock') { d.sessions[body?.week] = []; persist(); return { ok: true }; }
     if (path === '/api/admin/announce' || path === '/api/admin/test-discord') {
       console.log('[mock] discord', path, body); return { ok: true };
     }

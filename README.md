@@ -1,6 +1,6 @@
 # ⛏️ Craft & Chat — weekly session scheduler
 
-Every week your friends tap when they're free; the app picks the best 2-hour Minecraft session and
+Every week your friends tap when they're free; the app picks the best two 2-hour Minecraft sessions (configurable, `SESSIONS_PER_WEEK`, picked so everyone can play at least once) and
 Discord announces it. No accounts — you just pick your name.
 
 - **10-second answers:** one grid of hours (tap, or hold & drag; tinted by how many friends are free),

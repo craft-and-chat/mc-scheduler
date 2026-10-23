@@ -145,3 +145,14 @@ summary { cursor: pointer; min-height: 32px; }
 .acell { height: 32px; min-width: 0; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--text); font-size: 12px; padding: 0; cursor: pointer; }
 .acell.asel { outline: 3px solid var(--text); outline-offset: -1px; }
 .adetail { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+
+/* multi-session leader card + this-week banner */
+.leader { text-align: left; }
+.lead-title { margin-bottom: 4px; }
+.sessions { list-style: none; margin: 0; padding: 0; }
+.sessions li { padding: 6px 0; border-top: 1px solid var(--border); }
+.sessions li:first-child { border-top: 0; }
+.summary { margin: 6px 0 0; color: var(--muted); }
+.summary.all { color: var(--accent); font-weight: 600; }
+.bs-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.bs-row > div { min-width: 0; flex: 1 1 200px; }

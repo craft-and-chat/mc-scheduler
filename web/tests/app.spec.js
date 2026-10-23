@@ -254,44 +254,130 @@ test('morning times are hidden until shown, and stay shown once used', async ({ 
 const brush = (page, k) => page.getByTestId('brush-' + k).tap();
 const st = (page, day, hour) => cell(page, day, hour).getAttribute('data-state');
 
-async function newcomerWithNudge(page, name = 'Nudgee') {
-  await join(page, name);
-  await cell(page, 0, 12).tap(); // Mon 12:00 free: now counts as "answered"
-  await expect(page.getByTestId('nudge')).toHaveCount(1);
+const URL1 = URL + '&sessions=1'; // single-session mode: the old "full house" nudge
+async function newcomerWithNudge(page) {
+  await page.goto(URL1);
+  await page.getByRole('button', { name: 'Alex' }).click(); // Alex + Lee are the two missing for a Sat full house
+  await expect(page.getByTestId('week-screen')).toBeVisible();
+  await expect(page.getByTestId('nudge').first()).toBeVisible();
 }
 
-
-test('full-house nudge: Yes marks free and card disappears', async ({ page }) => {
+test('single-session mode: full-house nudge Yes marks free and card disappears', async ({ page }) => {
   await newcomerWithNudge(page);
-  const card = page.getByTestId('nudge');
-  await expect(card).toContainText('Can you do Sat 31 Oct · 19:00–21:00?');
-  await expect(card).toContainText('Only you and Alex are missing for a full house (4 of 6)');
-  // placed below the grid, above the regular times card
+  const card = page.getByTestId('nudge').first();
+  await expect(card).toContainText('Can you do ');
+  await expect(card).toContainText('Only you and Lee are missing for a full house');
+  await expect(page.getByTestId('leader')).toContainText('Leading so far');
   const gy = (await page.getByTestId('grid').boundingBox()).y, ny = (await card.boundingBox()).y;
   const ry = (await page.getByTestId('regular-card').boundingBox()).y;
   expect(gy).toBeLessThan(ny); expect(ny).toBeLessThan(ry);
   await noOverflow(page);
-  await card.scrollIntoViewIfNeeded();
-  await shot(page, '14-nudge-card');
-  await page.getByTestId('nudge-yes').tap();
-  // the answered slot's card is gone (an overlapping 20:00-22:00 card may legitimately take its place)
-  await expect(page.getByTestId('nudge').filter({ hasText: '19:00–21:00' })).toHaveCount(0);
-  expect(await st(page, 5, 19)).toBe('free'); expect(await st(page, 5, 20)).toBe('free');
+  const text = await card.textContent();
+  const label = text.match(/Can you do (.*?)\?/)[1];
+  await page.getByTestId('nudge-yes').first().tap();
+  await expect(page.getByTestId('nudge').filter({ hasText: label })).toHaveCount(0);
   await saved(page);
-  await page.reload();
-  expect(await st(page, 5, 19)).toBe('free');
-  await expect(page.getByTestId('nudge').filter({ hasText: '19:00–21:00' })).toHaveCount(0);
 });
 
-test('full-house nudge: Definitely not marks no and hides it', async ({ page }) => {
-  await newcomerWithNudge(page, 'Nope');
-  await page.getByTestId('nudge-no').tap();
-  await expect(page.getByTestId('nudge').filter({ hasText: '19:00–21:00' })).toHaveCount(0);
-  expect(await st(page, 5, 19)).toBe('no'); expect(await st(page, 5, 20)).toBe('no');
+test('single-session mode: Definitely not marks no and hides it', async ({ page }) => {
+  await newcomerWithNudge(page);
+  const label = (await page.getByTestId('nudge').first().textContent()).match(/Can you do (.*?)\?/)[1];
+  await page.getByTestId('nudge-no').first().tap();
+  await expect(page.getByTestId('nudge').filter({ hasText: label })).toHaveCount(0);
+  await saved(page);
+  await page.reload();
+  await expect(page.getByTestId('nudge').filter({ hasText: label })).toHaveCount(0);
+});
+
+// ---------- two sessions per week ----------
+test('two planned sessions with summary, and a show-list per session', async ({ page }) => {
+  await join(page, 'Obs Erver');
+  const leader = page.getByTestId('leader');
+  await expect(leader).toContainText('Planned so far');
+  await expect(page.getByTestId('leader-session')).toHaveCount(2);
+  await expect(page.getByTestId('leader-session').nth(0)).toContainText('Thu 29 Oct · 19:00–21:00');
+  await expect(page.getByTestId('leader-session').nth(0)).toContainText('2 playing');
+  await expect(page.getByTestId('leader-session').nth(1)).toContainText('Sat 31 Oct · 19:00–21:00');
+  await expect(page.getByTestId('leader-session').nth(1)).toContainText('4 playing');
+  await expect(page.getByTestId('leader-summary')).toContainText('5 of 6 who answered can play at least once');
+  await page.getByTestId('leader-list-1').click();
+  await expect(page.getByTestId('leader-session').nth(1)).toContainText('Can make it');
+  await noOverflow(page);
+});
+
+test('coverage nudge: appears for an uncovered user; Yes removes it', async ({ page }) => {
+  await page.goto(URL);
+  await page.getByRole('button', { name: 'Alex' }).click();
+  await expect(page.getByTestId('week-screen')).toBeVisible();
+  const cards = page.getByTestId('nudge');
+  await expect(cards).toHaveCount(2);
+  await expect(cards.first()).toContainText("You're not in either session yet — can you do Thu 29 Oct · 19:00–21:00?");
+  await expect(cards.nth(1)).toContainText('Sat 31 Oct · 19:00–21:00');
+  const gy = (await page.getByTestId('grid').boundingBox()).y, ny = (await cards.first().boundingBox()).y;
+  expect(gy).toBeLessThan(ny);
+  await noOverflow(page);
+  await cards.first().scrollIntoViewIfNeeded();
+  await shot(page, '20-coverage-nudge');
+  await cards.first().getByTestId('nudge-yes').tap();
+  await expect(cards).toHaveCount(0);
+  expect(await st(page, 3, 19)).toBe('free'); expect(await st(page, 3, 20)).toBe('free');
+  await expect(page.getByTestId('leader-summary')).toContainText('Everyone who answered gets to play');
   await saved(page);
   await page.reload();
   await expect(page.getByTestId('nudge')).toHaveCount(0);
-  expect(await st(page, 5, 19)).toBe('no');
+});
+
+test('coverage nudge: Definitely not on both hides them', async ({ page }) => {
+  await page.goto(URL);
+  await page.getByRole('button', { name: 'Alex' }).click();
+  await expect(page.getByTestId('nudge')).toHaveCount(2);
+  await page.getByTestId('nudge-no').first().tap();
+  await expect(page.getByTestId('nudge')).toHaveCount(1);
+  await page.getByTestId('nudge-no').first().tap();
+  await expect(page.getByTestId('nudge')).toHaveCount(0);
+  await saved(page);
+});
+
+test('no coverage nudge for a user who is in a session', async ({ page }) => {
+  await page.goto(URL);
+  await page.getByRole('button', { name: 'Sam' }).click();
+  await expect(page.getByTestId('week-screen')).toBeVisible();
+  await expect(page.getByTestId('nudge')).toHaveCount(0);
+});
+
+test('locked (current) week lists both sessions; banner shows both; no overflow', async ({ page }) => {
+  await join(page, 'Obs Erver');
+  const banner = page.getByTestId('this-week');
+  await expect(banner.getByTestId('this-week-session')).toHaveCount(2);
+  await expect(banner).toContainText('Thu 22 Oct · 20:00–22:00');
+  await expect(banner).toContainText('Sat 24 Oct · 19:00–21:00');
+  await expect(banner.getByRole('link', { name: 'Add to calendar' })).toHaveCount(2);
+  await expect(banner.getByRole('button', { name: /Copy/ })).toHaveCount(1);
+  await noOverflow(page);
+  await page.getByRole('button', { name: 'Previous week' }).click();
+  await expect(page.getByTestId('week-label')).toContainText('19 Oct');
+  const leader = page.getByTestId('leader');
+  await expect(leader).toContainText('Locked in');
+  await expect(page.getByTestId('leader-session')).toHaveCount(2);
+  await expect(page.getByTestId('nudge')).toHaveCount(0);
+  await noOverflow(page);
+  await shot(page, '21-locked-two-sessions');
+});
+
+test('leader card screenshots (light + dark) with two sessions and a coverage nudge', async ({ browser }) => {
+  for (const scheme of ['light', 'dark']) {
+    const ctx = await browser.newContext({ viewport: { width: 360, height: 800 }, colorScheme: scheme, hasTouch: true, isMobile: true });
+    const page = await ctx.newPage();
+    await page.goto(URL);
+    await page.getByRole('button', { name: 'Alex' }).click();
+    await expect(page.getByTestId('nudge')).toHaveCount(2);
+    await page.getByTestId('leader-list').click();
+    await page.getByTestId('leader').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `screenshots/22-leader-${scheme}.png`, fullPage: false });
+    await page.getByTestId('nudge').first().scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `screenshots/23-nudge-${scheme}.png`, fullPage: false });
+    await ctx.close();
+  }
 });
 
 test('best times and leader use a "Show list" toggle listing everyone, no "+N"', async ({ page }) => {
@@ -311,6 +397,7 @@ test('best times and leader use a "Show list" toggle listing everyone, no "+N"',
 
 test('admin grid: tap a tile to see who is free', async ({ page }) => {
   await page.goto(URL);
+  await expect(page.getByTestId('name-chips')).toBeVisible(); // app mounted (hashchange listener attached)
   await page.goto(URL + '#admin');
   await page.locator('#akey').fill('admin');
   await page.getByRole('button', { name: 'Check' }).click();

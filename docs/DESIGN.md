@@ -34,7 +34,7 @@ GitHub Pages (static web app, Vite + Preact)  ──fetch──▶  Cloudflare W
   `responded | cant | regular | waiting`.
 - **Open week** = the earliest week whose lock time is in the future (`openWeek(now)`). That's the week
   people fill in by default. **Lock** happens at `lockTime(week)` (default Sunday 18:00 before the week):
-  the best slot is chosen (`rankSlots` + `pickSession`) and stored in `sessions`; Discord announces it.
+  the best sessions are chosen (`rankSlots` + `pickSessions`: `SESSIONS_PER_WEEK`, default 2, range 1-3, on different days, maximising how many people play at least once) and stored in `week_sessions`; Discord announces them.
 - Ranking: most people fully available, then most partially available, then earliest.
   Fewer than `MIN_PLAYERS` (2) ⇒ status `none` ("no session this week").
 
@@ -42,15 +42,15 @@ GitHub Pages (static web app, Vite + Preact)  ──fetch──▶  Cloudflare W
 | When (group TZ)              | What |
 |------------------------------|------|
 | Fri 12:00 before the week    | Discord: "Availability for 27 Oct – 2 Nov is open → link" |
-| Sat 18:00                    | Discord: reminder listing who hasn't answered + current leading time |
-| Sun 18:00                    | Lock: pick best slot, store it, Discord announcement (+ optional Discord scheduled event) |
-| 60 min before session        | Discord: "Starting in 1 hour! Server: …" |
+| Sat 18:00                    | Discord: reminder listing who hasn't answered + the sessions planned so far |
+| Sun 18:00                    | Lock: pick the best sessions, store them, ONE Discord announcement listing all (+ a Discord scheduled event per session) |
+| 60 min before each session   | Discord: "Starting in 1 hour! Server: …" (one post per session, key `soon:<week>:<idx>`; previous week's Sunday session still handled) |
 
 People can fill in any upcoming week at any time; the posts are just nudges.
 "Active" people (for reminders) = anyone with a response in the last 6 weeks or any recurring rule.
 
 ## Data model
-See `worker/schema.sql`: `people`, `responses`, `recurring`, `sessions`, `sent_events`.
+See `worker/schema.sql`: `people`, `responses`, `recurring`, `week_sessions`, `sent_events` (old one-row-per-week `sessions` table is legacy and unused). `week_sessions` PRIMARY KEY(week, idx), idx 0.. chronological; a 'none' week is one row idx 0 status 'none'. Existing DBs: run `worker/migrations/0002_week_sessions.sql` (copies old rows in as idx 0).
 `responses` has three JSON hour lists: `blocks` (✓ Free), `maybe` (? Maybe), `no` (✗ Definitely not).
 Precedence if an hour is in several: free > maybe > no. A response with any list non-empty counts as answered.
 `cant` clears all three. Regular times only ever produce free hours. Existing DBs: run
@@ -84,9 +84,11 @@ never type it.)
     "config": { "timezone": "...", "dayStartHour": 12, "dayEndHour": 24, "sessionHours": 2, "minPlayers": 2,
                 "appName": "Minecraft Night", "mcServerAddress": "", "discordInviteUrl": "" , ...rest of parseConfig()},
     "people": [ { "id": 1, "name": "Tom M", "status": "responded", "blocks": [179,180], "updatedAt": "ISO|null", "active": true } ],
+    "sessions": [ <session>, ... ],  "currentSessions": [ ... ],   // all sessions of the viewed / current week (may be empty)
     "session": null | { "week": "...", "status": "scheduled|none", "day": 5, "hour": 19, "start": "ISO", "end": "ISO",
                         "attendees": ["Tom M"], "label": "Sat 31 Oct · 19:00–21:00" },
     "currentSession": <same shape, for currentWeek — the "this week we're playing…" banner>
+    // session / currentSession = sessions[0] / currentSessions[0], kept for compatibility
   }
   ```
   `people` = everyone (sorted by name), with effective blocks for the requested week.
@@ -105,11 +107,11 @@ never type it.)
   Validate ranges (startHour < endHour, within day hours). **Also merges the rule's blocks into that
   person's existing non-cant responses for weeks ≥ openWeek** (so adding a regular time takes effect now).
 - `DELETE /api/recurring/:id` → `{ ok: true }`.
-- `GET /api/calendar.ics` → iCalendar feed of scheduled sessions (last 4 weeks + future). Text/calendar.
+- `GET /api/calendar.ics` → iCalendar feed of every scheduled session (last 4 weeks + future). Text/calendar.
 
 ### Admin endpoints (header `X-Admin-Key` must equal secret `ADMIN_KEY`; if unset → 403 always)
-- `POST /api/admin/lock` `{ week, silent?: bool }` → (re)compute + store the session now, announce unless silent.
-- `POST /api/admin/unlock` `{ week }` → delete the sessions row (and the Discord event if any).
+- `POST /api/admin/lock` `{ week, silent?: bool }` → (re)compute + store all sessions now, announce unless silent. Returns `{ok, sessions, session}`.
+- `POST /api/admin/unlock` `{ week }` → delete all session rows of the week (and their Discord events).
 - `POST /api/admin/announce` `{ type: "open"|"remind"|"lock"|"soon", week }` → force a Discord post.
 - `POST /api/admin/test-discord` → posts a test message.
 - `DELETE /api/admin/people/:id` → delete person + their responses + rules.
@@ -127,7 +129,7 @@ never type it.)
   - `postDiscord(env, payload)` — webhook POST; if `DISCORD_WEBHOOK_URL` unset, `console.log` the payload and return.
 
 ### Environment
-Vars (wrangler config `vars`): `TIMEZONE, DAY_START_HOUR, DAY_END_HOUR, SESSION_HOURS, MIN_PLAYERS,
+Vars (wrangler config `vars`): `TIMEZONE, DAY_START_HOUR, DAY_END_HOUR, SESSION_HOURS, MIN_PLAYERS, SESSIONS_PER_WEEK,
 OPEN_DAYS_BEFORE, OPEN_HOUR, REMINDER_DAYS_BEFORE, REMINDER_HOUR, LOCK_DAYS_BEFORE, LOCK_HOUR,
 SESSION_REMINDER_MINUTES, APP_NAME, APP_URL, MC_SERVER_ADDRESS, DISCORD_INVITE_URL, DISCORD_MENTION,
 ALLOWED_ORIGINS`.
@@ -224,3 +226,10 @@ Post open / Post reminder / Post test message; people list with rename + delete 
 - `fullHouseNudges()` (shared/schedule.js) finds slots where the viewer is one of at most 2 people missing for everyone
   who answered, only if no full house exists yet and nobody missing said ✗ on it. Cards render below the grid for
   unlocked weeks, computed from the live local (unsaved) answers: [Yes, I can] / [Maybe] / [Definitely not], saved via normal autosave.
+
+### Two sessions per week
+- Leader card: "Planned so far" / "Locked in" lists each session ("N playing", own Show list) plus a summary
+  ("Everyone who answered gets to play" or "N of M who answered can play at least once").
+- With `sessionsPerWeek > 1` the nudge below the grid is `coverageNudges()`: if you answered but are in no planned
+  session, one card per session you could join ([Yes, I can] / [Definitely not]). With 1 session the old full-house nudge is used.
+- The this-week banner lists every session that hasn't ended. Mock mode: `?sessions=1` forces single-session.

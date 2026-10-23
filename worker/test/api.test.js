@@ -135,6 +135,8 @@ test('state shape', async () => {
   assert.equal(st.config.sessionHours, 2);
   assert.ok('mcServerAddress' in st.config && 'discordInviteUrl' in st.config);
   assert.equal(st.session, null); assert.equal(st.currentSession, null);
+  assert.deepEqual(st.sessions, []); assert.deepEqual(st.currentSessions, []);
+  assert.equal(st.config.sessionsPerWeek, 2);
   assert.deepEqual(Object.keys(st.people[0]).sort(), ['active', 'blocks', 'id', 'maybe', 'name', 'no', 'status', 'updatedAt']);
   // default week = open week
   const d = (await api('GET', '/api/state')).json;
@@ -171,6 +173,34 @@ test('session in state + ics + admin unlock', async () => {
     assert.equal((await api('POST', '/api/admin/unlock', { week: OPEN }, { 'X-Admin-Key': 'testkey' })).status, 200);
     assert.equal((await state()).session, null);
   }
+});
+
+test('two sessions: lock, state, ics, unlock', async () => {
+  const WK = '2026-11-16', admin = { 'X-Admin-Key': 'testkey' };
+  const B = (d, h) => d * 32 + h;
+  const ids = [];
+  for (const n of ['S1', 'S2', 'S3', 'S4', 'S5']) ids.push((await mk(n)).id);
+  const tue = [B(1, 19), B(1, 20)], thu = [B(3, 19), B(3, 20)], sat = [B(5, 19), B(5, 20)];
+  const put = (id, blocks) => api('PUT', '/api/availability', { personId: id, week: WK, blocks });
+  await put(ids[0], [...tue, ...sat]); await put(ids[1], [...tue, ...sat]); await put(ids[2], [...tue, ...sat]);
+  await put(ids[3], [...thu, ...sat]); await put(ids[4], thu);
+  const r = await api('POST', '/api/admin/lock', { week: WK, silent: true }, admin);
+  assert.equal(r.status, 200);
+  assert.equal(r.json.sessions.length, 2);
+  assert.deepEqual(r.json.sessions.map((x) => x.label), ['Thu 19 Nov · 19:00–21:00', 'Sat 21 Nov · 19:00–21:00']);
+  const st = await state(WK);
+  assert.equal(st.sessions.length, 2); assert.equal(st.locked, true);
+  assert.deepEqual(st.session, st.sessions[0]);
+  assert.deepEqual(st.sessions[1].attendees, ['S1', 'S2', 'S3', 'S4']);
+  // idempotent re-lock keeps two rows
+  assert.equal((await api('POST', '/api/admin/lock', { week: WK, silent: true }, admin)).json.sessions.length, 2);
+  assert.equal((await state(WK)).sessions.length, 2);
+  const txt = await (await fetch(w.base + '/api/calendar.ics', { headers: fake })).text();
+  assert.equal((txt.match(/BEGIN:VEVENT/g) || []).length, 2);
+  assert.equal(new Set(txt.match(/UID:.*/g)).size, 2);
+  assert.equal((await api('POST', '/api/admin/unlock', { week: WK }, admin)).status, 200);
+  const after = await state(WK);
+  assert.deepEqual(after.sessions, []); assert.equal(after.session, null);
 });
 
 test('access code enforcement', async () => {

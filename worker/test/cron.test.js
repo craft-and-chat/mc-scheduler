@@ -115,7 +115,7 @@ test('weekly cycle: open -> remind -> lock -> soon, idempotent', async () => {
   assert.equal(mock.webhooks.length, 2);
   const rem = text(last());
   assert.match(rem, /Eve/); assert.match(rem, /Frank/);
-  assert.match(rem, /Sat 7 Nov · 20:00–22:00/); assert.match(rem, /3 can play/);
+  assert.match(rem, /Sat 7 Nov · 20:00–22:00/); assert.match(rem, /3 can play/); assert.match(rem, /Leading so far/);
   await tick('2026-10-31T18:20:00Z');
   assert.equal(mock.webhooks.length, 2, 'no duplicate reminder');
 
@@ -125,6 +125,7 @@ test('weekly cycle: open -> remind -> lock -> soon, idempotent', async () => {
   const lk = text(last());
   assert.match(lk, /Sat 7 Nov · 20:00–22:00/); assert.match(lk, /Alice, Bob, Cara/);
   assert.match(lk, /mc\.example\.test/); assert.match(lk, /calendar\.google\.com/);
+  assert.match(lk, /Everyone gets to play at least once ✓/);
   const st = await api('GET', '/api/state?week=' + W, null, '2026-11-01T18:10:00Z');
   assert.equal(st.session.status, 'scheduled');
   assert.deepEqual(st.session.attendees, ['Alice', 'Bob', 'Cara']);
@@ -171,15 +172,16 @@ test("'none' case, admin re-lock and unlock", async () => {
   const before = mock.webhooks.length;
   const r = await api('POST', '/api/admin/lock', { week: W2 }, '2026-11-08T19:00:00Z');
   assert.equal(r.session.status, 'scheduled');
+  assert.equal(r.sessions.length, 2);
   assert.equal(mock.webhooks.length, before + 1);
-  assert.match(text(last()), /Tue 10 Nov · 18:00–20:00/);
+  assert.match(text(last()), /Tue 10 Nov · 18:00–20:00/); assert.match(text(last()), /Wed 11 Nov · 12:00–14:00/);
   assert.deepEqual(r.session.attendees, ['Alice', 'Bob', 'Cara']);
-  assert.equal(mock.api.filter((c) => c.method === 'POST').length, 1, 'event created');
+  assert.equal(mock.api.filter((c) => c.method === 'POST').length, 2, 'one event per session');
 
   // re-lock updates (PATCH) the same event; silent => no post
   await api('POST', '/api/admin/lock', { week: W2, silent: true }, '2026-11-08T19:05:00Z');
   assert.equal(mock.webhooks.length, before + 1);
-  assert.equal(mock.api.filter((c) => c.method === 'PATCH').length, 1);
+  assert.equal(mock.api.filter((c) => c.method === 'PATCH').length, 2);
 
   // forced announce
   await api('POST', '/api/admin/announce', { type: 'remind', week: W2 }, '2026-11-08T19:06:00Z');
@@ -187,6 +189,76 @@ test("'none' case, admin re-lock and unlock", async () => {
 
   // unlock deletes the event + session
   await api('POST', '/api/admin/unlock', { week: W2 }, '2026-11-08T19:10:00Z');
-  assert.equal(mock.api.filter((c) => c.method === 'DELETE').length, 1);
+  assert.equal(mock.api.filter((c) => c.method === 'DELETE').length, 2);
   assert.equal((await api('GET', '/api/state?week=' + W2, null, '2026-11-08T19:11:00Z')).session, null);
+});
+
+test('two sessions: lock post, events, two soon posts, no duplicates', async () => {
+  mock.reset();
+  const W3 = '2026-11-16'; // Mon
+  const B = (d, h) => d * 32 + h;
+  const ids = {};
+  for (const n of ['P1', 'P2', 'P3', 'P4', 'P5', 'P6']) ids[n] = await person(n);
+  const tue = [B(1, 19), B(1, 20)], thu = [B(3, 19), B(3, 20)], sat = [B(5, 19), B(5, 20)];
+  const t0 = '2026-11-10T10:00:00Z';
+  for (const n of ['P1', 'P2', 'P3']) await avail(ids[n], W3, [...tue, ...sat], t0);
+  await avail(ids.P4, W3, [...thu, ...sat], t0);
+  await avail(ids.P5, W3, thu, t0);
+  await avail(ids.P6, W3, [B(0, 13), B(0, 14)], t0); // answered, cannot play with anyone
+  // remind lists the planned sessions
+  await api('POST', '/api/admin/announce', { type: 'remind', week: W3 }, '2026-11-14T18:00:00Z');
+  assert.match(text(last()), /Planned so far/);
+  assert.match(text(last()), /Thu 19 Nov · 19:00–21:00.*\(2 can play\)/s);
+  assert.match(text(last()), /Sat 21 Nov · 19:00–21:00.*\(4 can play\)/s);
+  mock.reset();
+
+  await tick('2026-11-15T18:05:00Z');
+  const locks = mock.webhooks.filter((m) => /locked in/.test(text(m)));
+  assert.equal(locks.length, 1, JSON.stringify(mock.webhooks.map(text)));
+  const lk = text(locks[0]);
+  assert.match(lk, /Thu 19 Nov · 19:00–21:00/); assert.match(lk, /Sat 21 Nov · 19:00–21:00/);
+  assert.match(lk, /P4, P5/); assert.match(lk, /P1, P2, P3, P4/);
+  assert.equal((lk.match(/calendar\.google\.com/g) || []).length, 2);
+  assert.match(lk, /5 of 6 who answered can play/); assert.match(lk, /P6/);
+  const st = await api('GET', '/api/state?week=' + W3, null, '2026-11-15T18:10:00Z');
+  assert.equal(st.sessions.length, 2);
+  assert.equal(st.sessions[0].start, '2026-11-19T19:00:00.000Z');
+  const ev = mock.api.filter((c) => c.method === 'POST' && c.path === '/guilds/42/scheduled-events');
+  assert.equal(ev.length, 2);
+  await tick('2026-11-15T18:20:00Z');
+  assert.equal(mock.webhooks.filter((m) => /locked in/.test(text(m))).length, 1, 'no duplicate lock');
+  assert.equal(mock.api.filter((c) => c.method === 'POST').length, 2, 'no duplicate events');
+
+  // soon: one per session, each once
+  const soons = () => mock.webhooks.filter((m) => /Starting in about an hour/.test(text(m)));
+  await tick('2026-11-19T18:10:00Z');
+  assert.equal(soons().length, 1); assert.match(text(soons()[0]), /Thu 19 Nov/);
+  await tick('2026-11-19T18:25:00Z');
+  assert.equal(soons().length, 1, 'no duplicate soon');
+  await tick('2026-11-21T18:10:00Z');
+  assert.equal(soons().length, 2); assert.match(text(soons()[1]), /Sat 21 Nov/);
+  await tick('2026-11-21T18:40:00Z');
+  assert.equal(soons().length, 2, 'no duplicate soon');
+
+  // re-lock updates both events (PATCH), then unlock deletes both
+  mock.api.length = 0;
+  await api('POST', '/api/admin/lock', { week: W3, silent: true }, '2026-11-15T19:00:00Z');
+  assert.equal(mock.api.filter((c) => c.method === 'PATCH').length, 2);
+  await api('POST', '/api/admin/unlock', { week: W3 }, '2026-11-15T19:05:00Z');
+  assert.equal(mock.api.filter((c) => c.method === 'DELETE').length, 2);
+});
+
+test('a Sunday session of the previous week still gets its soon post', async () => {
+  mock.reset();
+  const W4 = '2026-11-23', B = (d, h) => d * 32 + h;
+  const ids = {};
+  for (const n of ['Q1', 'Q2']) ids[n] = await person(n);
+  for (const n of ['Q1', 'Q2']) await avail(ids[n], W4, [B(6, 19), B(6, 20)], '2026-11-20T10:00:00Z');
+  await tick('2026-11-22T18:05:00Z'); // lock W4 (it is the "lastLockedWeek" now)
+  // Sun 29 Nov 19:00 is in W4; by then openWeek has moved on two locks later? No: the next lock is Sun 29 18:00.
+  await tick('2026-11-29T18:05:00Z'); // lastLockedWeek is now W5, W4 is lw-7
+  await tick('2026-11-29T18:10:00Z');
+  const soons = mock.webhooks.filter((m) => /Starting in about an hour/.test(text(m)));
+  assert.equal(soons.length, 1, JSON.stringify(mock.webhooks.map(text)));
+  assert.match(text(soons[0]), /Sun 29 Nov/);
 });

@@ -95,40 +95,54 @@ export function buildOpen({ env, weekLabel }) {
   };
 }
 
-export function buildRemind({ env, weekLabel, waiting, leaderLabel, leaderCount, lockLabel }) {
+export function buildRemind({ env, weekLabel, waiting, planned = [], lockLabel }) {
   const link = appLink(env);
   const lines = [];
   lines.push(waiting.length ? `⏳ Still waiting on: **${names(waiting)}**` : '✅ Everyone has answered!');
-  lines.push(leaderLabel ? `Leading so far: **${leaderLabel}** (${leaderCount} can play)` : 'No times with enough people yet.');
-  if (lockLabel) lines.push(`Session gets locked in ${lockLabel}.`);
+  if (planned.length) {
+    lines.push(planned.length === 1 ? 'Leading so far:' : 'Planned so far:');
+    for (const p of planned) lines.push(`• **${p.label}** (${p.count} can play)`);
+  } else lines.push('No times with enough people yet.');
+  if (lockLabel) lines.push(`Sessions get locked in ${lockLabel}.`);
   if (link) lines.push(`\n👉 **[Fill in your times](${link})**`);
   return { embeds: [{ title: `⏰ Reminder: ${weekLabel}`, description: lines.join('\n'), color: ORANGE }] };
 }
 
-const maybeText = (maybe) => (maybe && maybe.length ? ` (maybe: ${names(maybe)})` : '');
-
-export function buildLock({ env, weekLabel, session, maybe = [], bestLabel, bestCount }) {
+// sessions: formatted session objects (all 'scheduled'), or [] / a single 'none' for no session.
+// coverage: { total, covered, left: string[] } over people who answered (optional).
+export function buildLock({ env, weekLabel, sessions = [], coverage = null, bestLabel, bestCount }) {
   const link = appLink(env);
-  if (!session || session.status !== 'scheduled') {
+  const sched = sessions.filter((s) => s && s.status === 'scheduled');
+  if (!sched.length) {
     const best = bestLabel ? ` Best was ${bestLabel} with ${bestCount} ${bestCount === 1 ? 'person' : 'people'}.` : '';
     return { embeds: [{ title: `😢 No session this week (${weekLabel})`, description: `Not enough people were free.${best}` + (link ? `\n\n[Plan the next one](${link})` : ''), color: GREY }] };
   }
-  const desc = [
-    `**${session.label}**`,
-    `🕒 ${ts(session.start)} (${ts(session.start, 'R')}) — your local time`,
-    `👥 ${names(session.attendees)} (${session.attendees.length})` + maybeText(maybe),
-    `🌐 ${serverText(env)}`,
-    `📅 [Add to Google Calendar](${calendarLink(env, session)})` + (link ? ` · [Open app](${link})` : ''),
-  ];
-  return { ping: true, embeds: [{ title: `🎮 Minecraft session locked in!`, description: desc.join('\n'), color: GREEN }] };
+  const desc = [];
+  sched.forEach((session, i) => {
+    if (i) desc.push('');
+    desc.push(`**${session.label}**`,
+      `🕒 ${ts(session.start)} (${ts(session.start, 'R')}) — your local time`,
+      `👥 ${names(session.attendees)} (${session.attendees.length})`,
+      `📅 [Add to Google Calendar](${calendarLink(env, session)})`);
+  });
+  desc.push('', `🌐 ${serverText(env)}` + (link ? ` · [Open app](${link})` : ''));
+  if (coverage && coverage.total > 0) {
+    desc.push(coverage.left.length === 0
+      ? 'Everyone gets to play at least once ✓'
+      : `${coverage.covered} of ${coverage.total} who answered can play — left out: ${names(coverage.left)}`);
+  }
+  return {
+    ping: true,
+    embeds: [{ title: sched.length > 1 ? `🎮 ${sched.length} Minecraft sessions locked in!` : `🎮 Minecraft session locked in!`, description: desc.join('\n'), color: GREEN }],
+  };
 }
 
-export function buildSoon({ env, session, maybe = [] }) {
+export function buildSoon({ env, session }) {
   return {
     ping: true,
     embeds: [{
       title: '⛏️ Starting in about an hour!',
-      description: [`**${session.label}**`, `🌐 Server: ${serverText(env)}`, `👥 ${names(session.attendees)}` + maybeText(maybe)].join('\n'),
+      description: [`**${session.label}**`, `🌐 Server: ${serverText(env)}`, `👥 ${names(session.attendees)}`].join('\n'),
       color: GREEN,
     }],
   };

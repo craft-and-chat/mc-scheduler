@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import {
-  addDays, rankSlots, quickPicks, fullHouseNudges, formatWeek, formatSlot, googleCalendarUrl, blockStart,
+  addDays, rankSlots, quickPicks, fullHouseNudges, pickSessions, coverageNudges, formatWeek, formatSlot, googleCalendarUrl, blockStart,
 } from '../../shared/schedule.js';
 import { api, MOCK, store } from './api.js';
 import { Grid } from './Grid.jsx';
@@ -181,16 +181,24 @@ export function WeekScreen({ me, now, onSwitch }) {
   const showMorning = morning || myEarly;
   const ranked = rankSlots(people, week, cfg, { notBefore: now });
   const best3 = quickPicks(ranked, cfg, 3);
-  const nudges = st.locked || cant ? [] : fullHouseNudges(me.id, people, week, cfg, { notBefore: now });
+  const multi = cfg.sessionsPerWeek > 1;
+  const planned = pickSessions(ranked, cfg);
+  const nudges = st.locked || cant ? [] : multi ? coverageNudges(me.id, people, week, cfg, { notBefore: now }) : fullHouseNudges(me.id, people, week, cfg, { notBefore: now });
 
   const weeks = [];
   for (let w = st.currentWeek; w <= addDays(st.openWeek, 21); w = addDays(w, 7)) weeks.push(w);
   const wi = weeks.indexOf(week);
 
-  const answered = people.filter((p) => p.status !== 'waiting');
-  const lead = best3[0];
-  const cs = st.currentSession;
-  const showBanner = cs && cs.status === 'scheduled' && new Date(cs.end) > now;
+  const answered = people.filter((p) => (p.status === 'responded' || p.status === 'regular') && p.blocks.length);
+  const lockedSessions = (st.sessions || []).filter((x) => x.status === 'scheduled');
+  // sessions shown in the leader card: [{ label, count, slot }]
+  const shown = st.locked
+    ? lockedSessions.map((x) => ({ label: x.label, count: x.attendees.length, names: x.attendees, slot: rankSlots(people, week, cfg).find((r) => r.day === x.day && r.hour === x.hour) }))
+    : planned.map((x) => ({ label: formatSlot(week, x, cfg), count: x.available.length, names: x.available.map((p) => p.name), slot: x }));
+  const inAny = new Set(shown.flatMap((x) => x.names));
+  const allIn = answered.length > 0 && answered.every((p) => inAny.has(p.name));
+  const cSessions = (st.currentSessions || []).filter((x) => x.status === 'scheduled' && new Date(x.end) > now);
+  const showBanner = cSessions.length > 0;
   const rules = detail ? detail.recurring : [];
   const prev = detail && detail.responses
     .filter((r) => r.week < week && !r.cant && r.blocks.length)
@@ -210,11 +218,15 @@ export function WeekScreen({ me, now, onSwitch }) {
 
       {showBanner && (
         <section class="card banner-session" data-testid="this-week">
-          <div>🎮 <b>This week: {cs.label}</b> — {cs.attendees.length} playing</div>
+          {cSessions.map((x) => (
+            <div key={x.start} class="bs-row" data-testid="this-week-session">
+              <div>🎮 <b>{cSessions.length > 1 ? x.label : `This week: ${x.label}`}</b> — {x.attendees.length} playing</div>
+              <a class="btn" target="_blank" rel="noopener"
+                href={googleCalendarUrl({ start: new Date(x.start), end: new Date(x.end), title: cfg.appName, details: server ? `Server: ${server}` : '', location: server || '' })}>
+                Add to calendar</a>
+            </div>
+          ))}
           <div class="row wrapRow">
-            <a class="btn" target="_blank" rel="noopener"
-              href={googleCalendarUrl({ start: new Date(cs.start), end: new Date(cs.end), title: cfg.appName, details: server ? `Server: ${server}` : '', location: server || '' })}>
-              Add to calendar</a>
             {server
               ? <button class="btn" onClick={async () => { if (await copyText(server)) { setCopied(true); setTimeout(() => setCopied(false), 1500); } }}>
                 {copied ? 'Copied ✓' : `Copy ${server}`}</button>
@@ -233,17 +245,27 @@ export function WeekScreen({ me, now, onSwitch }) {
       </div>
 
       <section class="card leader" data-testid="leader">
-        {st.locked
-          ? (st.session && st.session.status === 'scheduled'
-            ? <span>🔒 <b>Locked in: {st.session.label}</b> ({st.session.attendees.length} playing)</span>
-            : <span>🔒 No session this week — not enough players.</span>)
-          : lead && lead.available.length
-            ? <span>🏆 <b>Leading so far: {formatSlot(week, lead, cfg)}</b> ({lead.available.length} of {answered.length} who answered)</span>
-            : <span>No times yet — be the first!</span>}
-        {(() => {
-          const ls = st.locked ? (st.session && st.session.status === 'scheduled' && rankSlots(people, week, cfg).find((r) => r.day === st.session.day && r.hour === st.session.hour)) : (lead && lead.available.length && lead);
-          return ls ? <SlotList slot={ls} people={people} testid="leader-list" /> : null;
-        })()}
+        {shown.length === 0
+          ? <span>{st.locked ? '🔒 No session this week — not enough players.' : 'No times yet — be the first!'}</span>
+          : (
+            <>
+              <div class="lead-title"><b>{st.locked ? '🔒 Locked in' : cfg.sessionsPerWeek > 1 ? '🏆 Planned so far' : '🏆 Leading so far'}</b></div>
+              <ul class="sessions">
+                {shown.map((x, i) => (
+                  <li key={x.label} data-testid="leader-session">
+                    <div><b>{x.label}</b> <span class="muted">· {x.count} playing</span></div>
+                    {x.slot && <SlotList slot={x.slot} people={people} testid={i === 0 ? 'leader-list' : 'leader-list-' + i} />}
+                  </li>
+                ))}
+              </ul>
+              {answered.length > 0 && (
+                <p class={'small summary' + (allIn ? ' all' : '')} data-testid="leader-summary">
+                  {allIn ? '✅ Everyone who answered gets to play'
+                    : `${answered.filter((p) => inAny.has(p.name)).length} of ${answered.length} who answered can play${shown.length > 1 || cfg.sessionsPerWeek > 1 ? ' at least once' : ''}`}
+                </p>
+              )}
+            </>
+          )}
       </section>
 
       <section class={'me-row'} data-testid="status">
@@ -269,7 +291,19 @@ export function WeekScreen({ me, now, onSwitch }) {
         </section>
       </div>
 
-      {nudges.map((n) => {
+      {multi ? nudges.map((n) => {
+        const which = planned.length > 2 ? 'any session' : planned.length === 2 ? 'either session' : 'the planned session';
+        return (
+          <section key={n.day + '-' + n.hour} class="card nudge" data-testid="nudge">
+            <b>⚠️ You're not in {which} yet — can you do {formatSlot(week, n, cfg)}?</b>
+            <p class="small">{n.covered} of {n.total} who answered can play so far.</p>
+            <div class="row wrapRow">
+              <button class="btn primary" data-testid="nudge-yes" onClick={() => onApply(n.blocks, 'free')}>Yes, I can</button>
+              <button class="btn danger" data-testid="nudge-no" onClick={() => onApply(n.blocks, 'no')}>Definitely not</button>
+            </div>
+          </section>
+        );
+      }) : nudges.map((n) => {
         const others = n.othersMissing.map((p) => p.name);
         return (
           <section key={n.day + '-' + n.hour} class="card nudge" data-testid="nudge">

@@ -99,7 +99,7 @@ export function Admin({ now }) {
               <button class="btn" onClick={() => act('Posted reminder', () => api.admin.announce('remind', week))}>Post reminder</button>
               <button class="btn" onClick={() => act('Test sent', () => api.admin.testDiscord())}>Post test message</button>
             </div>
-            <p class="small muted">Session: {st.session ? (st.session.status === 'scheduled' ? st.session.label : 'none') : 'not decided yet'}</p>
+            <p class="small muted">Sessions: {st.sessions && st.sessions.length ? (st.sessions[0].status === 'scheduled' ? st.sessions.map((x) => x.label).join(' + ') : 'none') : 'not decided yet'}</p>
           </section>
           <AdminGrid st={st} week={week} />
           <section class="card">

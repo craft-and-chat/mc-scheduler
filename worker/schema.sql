@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS recurring (
 );
 CREATE INDEX IF NOT EXISTS recurring_person ON recurring(person_id);
 
--- The decided session for a week (written at lock time).
+-- LEGACY (one session per week). Superseded by week_sessions; no longer read or written.
 CREATE TABLE IF NOT EXISTS sessions (
   week TEXT PRIMARY KEY,
   status TEXT NOT NULL,                     -- 'scheduled' | 'none' (nobody/too few could make it)
@@ -42,6 +42,22 @@ CREATE TABLE IF NOT EXISTS sessions (
   attendees TEXT NOT NULL DEFAULT '[]',     -- JSON string[] of names who said they can make it
   locked_at TEXT NOT NULL DEFAULT (datetime('now')),
   discord_event_id TEXT                     -- optional Discord scheduled event id
+);
+
+-- The decided sessions for a week (written at lock time), idx 0.. in chronological order.
+-- A 'none' week is a single row idx 0 with status 'none'.
+CREATE TABLE IF NOT EXISTS week_sessions (
+  week TEXT NOT NULL,
+  idx INTEGER NOT NULL,
+  status TEXT NOT NULL,                     -- 'scheduled' | 'none'
+  day INTEGER,
+  hour INTEGER,
+  start_utc TEXT,
+  end_utc TEXT,
+  attendees TEXT NOT NULL DEFAULT '[]',
+  locked_at TEXT NOT NULL DEFAULT (datetime('now')),
+  discord_event_id TEXT,
+  PRIMARY KEY (week, idx)
 );
 
 -- Idempotency for cron-driven Discord posts, e.g. 'open:2026-10-26', 'remind:..', 'lock:..', 'soon:..'

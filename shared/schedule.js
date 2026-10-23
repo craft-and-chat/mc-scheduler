@@ -18,6 +18,7 @@ export const DEFAULT_CONFIG = {
   dayEndHour: 24, // last bookable hour (exclusive); up to 30 allowed (06:00 next morning)
   sessionHours: 2,
   minPlayers: 2,
+  sessionsPerWeek: 2, // sessions booked per week, chosen so as many people as possible play at least once
   openDaysBefore: 3, openHour: 12, // Discord "availability open" post: Fri 12:00 before the week
   reminderDaysBefore: 2, reminderHour: 18, // Discord reminder: Sat 18:00
   lockDaysBefore: 1, lockHour: 18, // session decided + announced: Sun 18:00
@@ -39,6 +40,7 @@ export function parseConfig(env = {}) {
     dayEndHour: num('DAY_END_HOUR', d.dayEndHour),
     sessionHours: num('SESSION_HOURS', d.sessionHours),
     minPlayers: num('MIN_PLAYERS', d.minPlayers),
+    sessionsPerWeek: Math.max(1, Math.min(3, num('SESSIONS_PER_WEEK', d.sessionsPerWeek))),
     openDaysBefore: num('OPEN_DAYS_BEFORE', d.openDaysBefore),
     openHour: num('OPEN_HOUR', d.openHour),
     reminderDaysBefore: num('REMINDER_DAYS_BEFORE', d.reminderDaysBefore),
@@ -237,6 +239,63 @@ export function rankSlots(people, weekId, cfg, opts = {}) {
 export function pickSession(ranked, cfg) {
   const top = ranked[0];
   return top && top.available.length >= cfg.minPlayers ? top : null;
+}
+
+// Choose up to cfg.sessionsPerWeek sessions (on different days, each with >= minPlayers) so that
+// as many people as possible can play in at least one. Tie-breaks: more total attendance, then the
+// more even split (higher smallest session), then the best-ranked/earliest choice.
+// ranked: output of rankSlots. Returns slots sorted chronologically ([] if nothing reaches minPlayers).
+export function pickSessions(ranked, cfg, k = cfg.sessionsPerWeek || 1) {
+  const pool = ranked.filter((s) => s.available.length >= cfg.minPlayers);
+  if (!pool.length) return [];
+  const ids = pool.map((s) => s.available.map((p) => p.id));
+  const better = (a, b) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] > b[i]; return false; };
+  const scoreOf = (idx) => {
+    const cov = new Set(), sizes = idx.map((i) => ids[i].length);
+    for (const i of idx) for (const id of ids[i]) cov.add(id);
+    return [cov.size, sizes.reduce((x, y) => x + y, 0), Math.min(...sizes)];
+  };
+  const chrono = (idx) => idx.map((i) => pool[i]).sort((a, b) => a.day - b.day || a.hour - b.hour);
+  if (k <= 1) return [pool[0]];
+  // best pair, exhaustively (a few hundred candidate slots at most)
+  let best = [0], bestScore = scoreOf([0]);
+  for (let i = 0; i < pool.length; i++) {
+    for (let j = i + 1; j < pool.length; j++) {
+      if (pool[i].day === pool[j].day) continue;
+      const sc = scoreOf([i, j]);
+      if (better(sc, bestScore) || best.length < 2) { best = [i, j]; bestScore = sc; }
+    }
+  }
+  // 3+ sessions: add greedily
+  while (best.length < k) {
+    let add = -1, addScore = null;
+    for (let i = 0; i < pool.length; i++) {
+      if (best.some((b) => pool[b].day === pool[i].day)) continue;
+      const sc = scoreOf([...best, i]);
+      if (!addScore || better(sc, addScore)) { add = i; addScore = sc; }
+    }
+    if (add < 0 || addScore[0] === bestScore[0]) break; // only add a session if it brings in someone new
+    best.push(add); bestScore = addScore;
+  }
+  return chrono(best);
+}
+
+// Multi-session solver: if the viewer has answered but isn't in any of the planned sessions,
+// suggest those sessions (skipping any with hours they marked "definitely not").
+// Returns [{ ...slot, total, covered, notCovered: [{id,name}] }]
+export function coverageNudges(meId, people, weekId, cfg, opts = {}) {
+  const pool = people.filter((p) => (p.status === 'responded' || p.status === 'regular') && p.blocks && p.blocks.length);
+  const me = pool.find((p) => p.id === meId);
+  if (!me) return [];
+  const sessions = pickSessions(rankSlots(pool, weekId, cfg, { notBefore: opts.notBefore }), cfg);
+  if (!sessions.length) return [];
+  const covered = new Set(sessions.flatMap((s) => s.available.map((p) => p.id)));
+  if (covered.has(meId)) return [];
+  const no = new Set(me.no || []);
+  const notCovered = pool.filter((p) => !covered.has(p.id)).map((p) => ({ id: p.id, name: p.name }));
+  return sessions
+    .filter((s) => !s.blocks.some((b) => no.has(b)))
+    .map((s) => ({ ...s, total: pool.length, covered: covered.size, notCovered }));
 }
 
 // Up to n non-overlapping popular slots (for the "tap the ones that work" quick list).

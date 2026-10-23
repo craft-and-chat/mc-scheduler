@@ -217,11 +217,77 @@ test('fullHouseNudges: no suppresses, maybe flagged, notBefore skips past', () =
   assert.deepEqual(S.fullHouseNudges(4, many, W, cfg9), []);
 });
 
-test('discord lock message mentions maybes', async () => {
+test('discord lock message lists every session', async () => {
   const { buildLock } = await import('../src/discord.js');
-  const session = { status: 'scheduled', label: 'Tue 27 Oct · 19:00–21:00', start: '2026-10-27T19:00:00Z', end: '2026-10-27T21:00:00Z', attendees: ['A', 'B'], week: '2026-10-26' };
-  const d = (m) => buildLock({ env: {}, weekLabel: 'x', session, maybe: m }).embeds[0].description;
-  assert.ok(d(['C', 'D']).includes('(2)'));
-  assert.ok(d(['C', 'D']).includes('(maybe: C, D)'));
-  assert.ok(!d([]).includes('maybe'));
+  const mk = (label, attendees) => ({ status: 'scheduled', label, start: '2026-10-27T19:00:00Z', end: '2026-10-27T21:00:00Z', attendees, week: '2026-10-26' });
+  const sessions = [mk('Tue 27 Oct · 19:00–21:00', ['A', 'B']), mk('Thu 29 Oct · 19:00–21:00', ['C', 'D', 'E'])];
+  const d = (cov) => buildLock({ env: {}, weekLabel: 'x', sessions, coverage: cov }).embeds[0].description;
+  const all = d({ total: 5, covered: 5, left: [] });
+  assert.ok(all.includes('Tue 27 Oct') && all.includes('Thu 29 Oct') && all.includes('(2)') && all.includes('(3)'));
+  assert.equal((all.match(/calendar\.google\.com/g) || []).length, 2);
+  assert.ok(all.includes('Everyone gets to play at least once ✓'));
+  assert.ok(d({ total: 6, covered: 5, left: ['Zed'] }).includes('5 of 6 who answered can play'));
+  assert.ok(d({ total: 6, covered: 5, left: ['Zed'] }).includes('Zed'));
+});
+
+// ---------- multi-session ----------
+const WK = '2026-10-26';
+const cfgS = S.parseConfig({ DAY_START_HOUR: '12', SESSIONS_PER_WEEK: '2' });
+const slotAt = (day, h) => [day * 32 + h, day * 32 + h + 1];
+const ppl = (id, name, blocks, extra = {}) => ({ id, name, status: 'responded', blocks, maybe: [], no: [], ...extra });
+const names = (arr) => arr.map((s) => `${s.day}@${s.hour}`);
+
+test('parseConfig sessionsPerWeek default and clamp', () => {
+  assert.equal(S.parseConfig({}).sessionsPerWeek, 2);
+  assert.equal(S.parseConfig({ SESSIONS_PER_WEEK: '9' }).sessionsPerWeek, 3);
+  assert.equal(S.parseConfig({ SESSIONS_PER_WEEK: '0' }).sessionsPerWeek, 1);
+});
+
+test('pickSessions: a pair covering everyone beats the most popular single slot', () => {
+  // Tue: A B C ; Thu: D E ; Sat: A B C D (most popular single slot, but E is never covered with it)
+  const people = [
+    ppl(1, 'A', [...slotAt(1, 19), ...slotAt(5, 19)]), ppl(2, 'B', [...slotAt(1, 19), ...slotAt(5, 19)]),
+    ppl(3, 'C', [...slotAt(1, 19), ...slotAt(5, 19)]), ppl(4, 'D', [...slotAt(3, 19), ...slotAt(5, 19)]),
+    ppl(5, 'E', slotAt(3, 19)),
+  ];
+  const r = S.rankSlots(people, WK, cfgS);
+  assert.deepEqual(names([S.pickSession(r, cfgS)]), ['5@19']); // old behaviour: Sat alone leaves E out
+  const two = S.pickSessions(r, cfgS);
+  assert.equal(two.length, 2);
+  assert.deepEqual(names(two), ['3@19', '5@19']); // chronological, Thu adds E to the popular Sat
+  const covered = new Set(two.flatMap((s) => s.available.map((p) => p.id)));
+  assert.equal(covered.size, 5);
+  assert.notEqual(two[0].day, two[1].day);
+});
+
+test('pickSessions: always different days, k=1 like before, below minPlayers -> []', () => {
+  const people = [ppl(1, 'A', [...slotAt(2, 18), ...slotAt(2, 20)]), ppl(2, 'B', [...slotAt(2, 18), ...slotAt(2, 20)])];
+  const r = S.rankSlots(people, WK, cfgS);
+  const p = S.pickSessions(r, cfgS);
+  assert.equal(p.length, 1); // only one day has anyone
+  assert.equal(S.pickSessions(r, cfgS, 1)[0], r[0]);
+  const one = S.parseConfig({ DAY_START_HOUR: '12', SESSIONS_PER_WEEK: '1' });
+  assert.deepEqual(S.pickSessions(S.rankSlots(people, WK, one), one).map((s) => s.day), [2]);
+  assert.deepEqual(S.pickSessions(S.rankSlots([people[0]], WK, cfgS), cfgS), []);
+  assert.deepEqual(S.pickSessions([], cfgS), []);
+});
+
+test('coverageNudges basics', () => {
+  const people = [
+    ppl(1, 'A', [...slotAt(1, 19), ...slotAt(3, 19)]), ppl(2, 'B', [...slotAt(1, 19), ...slotAt(3, 19)]),
+    ppl(3, 'C', [...slotAt(1, 19), ...slotAt(3, 19)]), ppl(4, 'D', slotAt(5, 12)),
+  ];
+  // D answered but plays in neither planned session
+  const n = S.coverageNudges(4, people, WK, cfgS);
+  assert.equal(n.length, 2);
+  assert.deepEqual(names(n), ['1@19', '3@19']);
+  assert.equal(n[0].total, 4); assert.equal(n[0].covered, 3); assert.deepEqual(n[0].notCovered.map((p) => p.name), ['D']);
+  // someone covered gets nothing
+  assert.deepEqual(S.coverageNudges(1, people, WK, cfgS), []);
+  // "definitely not" hides that session
+  const no = people.map((p) => (p.id === 4 ? { ...p, no: [1 * 32 + 20] } : p));
+  assert.deepEqual(names(S.coverageNudges(4, no, WK, cfgS)), ['3@19']);
+  // unanswered viewer gets nothing
+  assert.deepEqual(S.coverageNudges(9, people, WK, cfgS), []);
+  assert.deepEqual(S.coverageNudges(4, people.map((p) => (p.id === 4 ? { ...p, status: 'waiting', blocks: [] } : p)), WK, cfgS), []);
 });

@@ -3,7 +3,7 @@ import {
   rankSlots, zonedParts, formatSlot,
 } from '../../shared/schedule.js';
 import {
-  getPerson, getRules, getWeekState, getSession, deleteSession, formatSession, normName, nameKey, parseResp, toIso,
+  getPerson, getRules, getWeekState, getSessions, formatSession, normName, nameKey, parseResp, toIso,
 } from './db.js';
 import { runScheduled, lockWeek, announce, unlockWeek } from './cron.js';
 import { postDiscord } from './discord.js';
@@ -91,12 +91,13 @@ async function handle(request, env, url, now) {
     const week = weekParam(url.searchParams.get('week'), cfg, now, oWeek);
     const st = await getWeekState(env, week, now);
     const lockAt = lockTime(week, cfg);
-    const cur = week === cWeek ? st.session : formatSession(await getSession(env, cWeek), cfg);
+    const currentSessions = week === cWeek ? st.sessions : (await getSessions(env, cWeek)).map((r) => formatSession(r, cfg));
     return json({
       now: now.toISOString(), openWeek: oWeek, currentWeek: cWeek, week,
-      lockAt: lockAt.toISOString(), locked: lockAt <= now || !!st.session,
+      lockAt: lockAt.toISOString(), locked: lockAt <= now || st.sessions.length > 0,
       config: { ...cfg, appName: env.APP_NAME || 'Craft & Chat', mcServerAddress: env.MC_SERVER_ADDRESS || '', discordInviteUrl: env.DISCORD_INVITE_URL || '' },
-      people: st.people, session: st.session, currentSession: cur,
+      people: st.people, sessions: st.sessions, session: st.sessions[0] || null,
+      currentSessions, currentSession: currentSessions[0] || null,
     });
   }
 
@@ -215,8 +216,8 @@ async function handle(request, env, url, now) {
     if (path === '/api/admin/lock' && method === 'POST') {
       const b = await body(request);
       if (!isWeekId(b.week)) throw bad('invalid week');
-      const session = await lockWeek(env, b.week, now, { silent: !!b.silent });
-      return json({ ok: true, session: session ?? formatSession(await getSession(env, b.week), cfg) });
+      const sessions = await lockWeek(env, b.week, now, { silent: !!b.silent });
+      return json({ ok: true, sessions, session: sessions[0] || null });
     }
     if (path === '/api/admin/unlock' && method === 'POST') {
       const b = await body(request);
@@ -254,7 +255,7 @@ const icsDate = (iso) => new Date(iso).toISOString().replace(/[-:]/g, '').replac
 
 async function calendar(env, cfg, now) {
   const since = addDays(zonedParts(now, cfg.timezone).ymd, -28);
-  const { results } = await env.DB.prepare("SELECT * FROM sessions WHERE status = 'scheduled' AND week >= ? ORDER BY week")
+  const { results } = await env.DB.prepare("SELECT * FROM week_sessions WHERE status = 'scheduled' AND week >= ? ORDER BY week, idx")
     .bind(addDays(since, -7)).all();
   const app = env.APP_NAME || 'Craft & Chat';
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', `PRODID:-//${app}//mc-scheduler//EN`, 'CALSCALE:GREGORIAN', `X-WR-CALNAME:${icsEsc(app)}`];
@@ -262,7 +263,7 @@ async function calendar(env, cfg, now) {
     if (!row.start_utc || row.start_utc < new Date(Date.parse(since + 'T00:00:00Z')).toISOString()) continue;
     const s = formatSession(row, cfg);
     const desc = `Playing: ${s.attendees.join(', ')}${env.MC_SERVER_ADDRESS ? `\nServer: ${env.MC_SERVER_ADDRESS}` : ''}`;
-    lines.push('BEGIN:VEVENT', `UID:${row.week}@mc-scheduler`, `DTSTAMP:${icsDate(toIso(row.locked_at) || row.start_utc)}`,
+    lines.push('BEGIN:VEVENT', `UID:${row.week}-${row.idx}@mc-scheduler`, `DTSTAMP:${icsDate(toIso(row.locked_at) || row.start_utc)}`,
       `DTSTART:${icsDate(row.start_utc)}`, `DTEND:${icsDate(row.end_utc)}`, `SUMMARY:${icsEsc(app)}`,
       `DESCRIPTION:${icsEsc(desc)}`, ...(env.MC_SERVER_ADDRESS ? [`LOCATION:${icsEsc(env.MC_SERVER_ADDRESS)}`] : []), 'END:VEVENT');
   }

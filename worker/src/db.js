@@ -53,23 +53,26 @@ export function formatSession(row, cfg) {
   return out;
 }
 
-export async function getSession(env, week) {
-  return env.DB.prepare('SELECT * FROM sessions WHERE week = ?').bind(week).first();
+export async function getSessions(env, week) {
+  const { results } = await env.DB.prepare('SELECT * FROM week_sessions WHERE week = ? ORDER BY idx').bind(week).all();
+  return results;
 }
 
-export async function saveSession(env, s) {
-  const attendees = typeof s.attendees === 'string' ? s.attendees : JSON.stringify(s.attendees || []);
-  await env.DB.prepare(
-    `INSERT INTO sessions (week, status, day, hour, start_utc, end_utc, attendees, locked_at, discord_event_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)
-     ON CONFLICT(week) DO UPDATE SET status=excluded.status, day=excluded.day, hour=excluded.hour,
-       start_utc=excluded.start_utc, end_utc=excluded.end_utc, attendees=excluded.attendees,
-       locked_at=excluded.locked_at, discord_event_id=excluded.discord_event_id`,
-  ).bind(s.week, s.status, s.day ?? null, s.hour ?? null, s.start_utc ?? null, s.end_utc ?? null, attendees, s.discord_event_id ?? null).run();
+// Replace all session rows of a week. rows: [{ status, day, hour, start_utc, end_utc, attendees, discord_event_id }]
+export async function saveSessions(env, week, rows) {
+  const stmts = [env.DB.prepare('DELETE FROM week_sessions WHERE week = ?').bind(week)];
+  rows.forEach((s, idx) => {
+    const attendees = typeof s.attendees === 'string' ? s.attendees : JSON.stringify(s.attendees || []);
+    stmts.push(env.DB.prepare(
+      `INSERT INTO week_sessions (week, idx, status, day, hour, start_utc, end_utc, attendees, locked_at, discord_event_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)`,
+    ).bind(week, idx, s.status, s.day ?? null, s.hour ?? null, s.start_utc ?? null, s.end_utc ?? null, attendees, s.discord_event_id ?? null));
+  });
+  await env.DB.batch(stmts);
 }
 
-export async function deleteSession(env, week) {
-  await env.DB.prepare('DELETE FROM sessions WHERE week = ?').bind(week).run();
+export async function deleteSessions(env, week) {
+  await env.DB.prepare('DELETE FROM week_sessions WHERE week = ?').bind(week).run();
 }
 
 export async function markSent(env, key) {
@@ -81,15 +84,15 @@ export async function wasSent(env, key) {
   return !!(await env.DB.prepare('SELECT 1 AS x FROM sent_events WHERE key = ?').bind(key).first());
 }
 
-// { cfg, people:[{id,name,status,blocks,updatedAt,active}], session }
+// { cfg, people:[{id,name,status,blocks,updatedAt,active}], sessions: [], session (= sessions[0] | null) }
 export async function getWeekState(env, week, now) {
   const cfg = parseConfig(env);
-  const [people, rules, resps, activeRows, sessRow] = await Promise.all([
+  const [people, rules, resps, activeRows, sessRows] = await Promise.all([
     getPeople(env),
     getRules(env),
     getResponses(env, week),
     env.DB.prepare('SELECT DISTINCT person_id FROM responses WHERE week >= ? AND week <= ?').bind(addDays(week, -42), week).all(),
-    getSession(env, week),
+    getSessions(env, week),
   ]);
   const respBy = new Map(resps.map((r) => [r.personId, r]));
   const rulesBy = new Map();
@@ -104,7 +107,8 @@ export async function getWeekState(env, week, now) {
     const eff = effectiveBlocks(resp, rulesBy.get(p.id) || [], week, cfg);
     return { id: p.id, name: p.name, status: eff.status, blocks: eff.blocks, maybe: eff.maybe, no: eff.no, updatedAt: resp ? resp.updatedAt : null, active: active.has(p.id) };
   });
-  return { cfg, people: out, session: formatSession(sessRow, cfg) };
+  const sessions = sessRows.map((r) => formatSession(r, cfg));
+  return { cfg, people: out, sessions, session: sessions[0] || null };
 }
 
 export { rulesToBlocks };
